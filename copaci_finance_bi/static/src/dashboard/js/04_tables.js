@@ -341,7 +341,15 @@ function renderDrillAccount(){
   // ── Event bindings ──
   const odooBtn=document.getElementById('drillOpenOdoo');
   if(odooBtn){
+    const isOdoo=!window.location.port||['80','443'].includes(window.location.port);
+    if(!isOdoo){
+      odooBtn.disabled=true;
+      odooBtn.title='Disponible uniquement sur Odoo (staging / production)';
+      odooBtn.style.opacity='0.4';
+      odooBtn.style.cursor='not-allowed';
+    }
     odooBtn.addEventListener('click',()=>{
+      if(!isOdoo){return}
       const base=window.location.origin;
       const accId=String(Number(s.accountId));
       // Build Odoo GL URL with date range and company filter in context
@@ -382,15 +390,18 @@ function renderDrillAccount(){
   }
 
   // Click sur une ligne → ouvrir la pièce comptable dans Odoo
-  body.querySelectorAll('tr[data-move-id]').forEach(tr=>{
-    tr.addEventListener('click',()=>{
-      const moveId=tr.dataset.moveId;
-      if(moveId){
-        const base=window.location.origin;
-        window.open(base+'/odoo/accounting/journal-entries/'+moveId,'_blank','noopener,noreferrer');
-      }
+  // Désactivé en local (pas d'Odoo backend)
+  if(isOdoo){
+    body.querySelectorAll('tr[data-move-id]').forEach(tr=>{
+      tr.addEventListener('click',()=>{
+        const moveId=tr.dataset.moveId;
+        if(moveId){
+          const base=window.location.origin;
+          window.open(base+'/odoo/accounting/journal-entries/'+moveId,'_blank','noopener,noreferrer');
+        }
+      });
     });
-  });
+  }
 }
 
 // ─── FINANCIAL TABLE BUILDER ─────────────────────────────────
