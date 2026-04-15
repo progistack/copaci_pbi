@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>COPACI — Finance BI Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/copaci_finance_bi/static/src/dashboard/css/dashboard.css">
+<script src="/copaci_finance_bi/static/src/lib/chart.umd.min.js"></script>
+<script src="/copaci_finance_bi/static/src/lib/chartjs-plugin-datalabels.min.js"></script>
+<script src="/copaci_finance_bi/static/src/lib/pptxgenjs.bundle.js"></script>
+</head>
+<body>
+<div class="app">
+
+<!-- ═══ HEADER ═══ -->
+<header class="header">
+  <div class="header-left"><div class="header-title">
+    <h1>COPACI — Finance BI</h1>
+    <p>&Eacute;tats financiers interactifs &middot; Donn&eacute;es Odoo temps r&eacute;el</p>
+  </div></div>
+  <div class="header-right">
+    <div class="pills-wrap" id="monthPills">
+      <button class="pill active" data-m="all">Tous</button>
+      <button class="pill" data-m="0">Jan</button><button class="pill" data-m="1">Fev</button>
+      <button class="pill" data-m="2">Mar</button><button class="pill" data-m="3">Avr</button>
+      <button class="pill" data-m="4">Mai</button><button class="pill" data-m="5">Jun</button>
+      <button class="pill" data-m="6">Jul</button><button class="pill" data-m="7">Aou</button>
+      <button class="pill" data-m="8">Sep</button><button class="pill" data-m="9">Oct</button>
+      <button class="pill" data-m="10">Nov</button><button class="pill" data-m="11">Dec</button>
+    </div>
+    <div class="mode-wrap">
+      <button class="mode-btn active" data-mode="mensuel">Mensuel</button>
+      <button class="mode-btn" data-mode="ytd">YTD</button>
+      <button class="mode-btn" data-mode="ltm">LTM</button>
+    </div>
+    <div class="company-wrap single" id="companyWrap">
+      <span class="cw-label">Soci&eacute;t&eacute;</span>
+    </div>
+    <div class="year-wrap">
+      <button class="year-btn" id="yearPrev">&#9664;</button>
+      <span class="year-label" id="yearLabel"></span>
+      <script>document.getElementById('yearLabel').textContent=new Date().getFullYear();</script>
+      <button class="year-btn" id="yearNext">&#9654;</button>
+      <button class="compare-toggle" id="compareN1">N-1</button>
+      <button class="compare-toggle" id="compareBudget" title="Budget (placeholder = GL actual)">Bud</button>
+    </div>
+    <button class="theme-toggle" id="themeBtn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      Theme
+    </button>
+    <button class="export-btn" id="exportBtn">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Export
+    </button>
+  </div>
+</header>
+
+<!-- ═══ EXPORT MODAL ═══ -->
+<div class="export-overlay" id="exportOverlay">
+  <div class="export-modal">
+    <div class="export-modal-header">
+      <h2>Configuration &amp; Export</h2>
+      <button class="export-close" id="exportClose">&times;</button>
+    </div>
+    <div class="export-modal-body">
+      <div class="export-section">
+        <h3>P&eacute;riode</h3>
+        <div class="cfg-period-row">
+          <span class="cfg-label">Ann&eacute;e</span>
+          <div class="cfg-pills" id="cfgYearPills"></div>
+        </div>
+        <div class="cfg-period-row">
+          <span class="cfg-label">Mode</span>
+          <div class="cfg-pills" id="cfgModePills">
+            <button class="cfg-pill active" data-mode="mensuel">Mensuel</button>
+            <button class="cfg-pill" data-mode="ytd">YTD</button>
+            <button class="cfg-pill" data-mode="ltm">LTM</button>
+          </div>
+        </div>
+        <div class="cfg-period-row">
+          <span class="cfg-label">Mois</span>
+          <div class="cfg-pills" id="cfgMonthPills">
+            <button class="cfg-pill active" data-m="all">Tous</button>
+            <button class="cfg-pill" data-m="0">Jan</button><button class="cfg-pill" data-m="1">Fev</button>
+            <button class="cfg-pill" data-m="2">Mar</button><button class="cfg-pill" data-m="3">Avr</button>
+            <button class="cfg-pill" data-m="4">Mai</button><button class="cfg-pill" data-m="5">Jun</button>
+            <button class="cfg-pill" data-m="6">Jul</button><button class="cfg-pill" data-m="7">Aou</button>
+            <button class="cfg-pill" data-m="8">Sep</button><button class="cfg-pill" data-m="9">Oct</button>
+            <button class="cfg-pill" data-m="10">Nov</button><button class="cfg-pill" data-m="11">Dec</button>
+          </div>
+        </div>
+      </div>
+      <div class="export-section">
+        <h3>P&eacute;rim&egrave;tre</h3>
+        <div class="export-scope">
+          <label class="scope-all"><input type="checkbox" id="scopeAll" checked> Tout le dashboard</label>
+          <div class="cfg-scope-grid">
+            <label><input type="checkbox" class="scope-tab" data-scope="synthese" checked> Synth&egrave;se</label>
+            <label><input type="checkbox" class="scope-tab" data-scope="pl" checked> Compte de R&eacute;sultat</label>
+            <label><input type="checkbox" class="scope-tab" data-scope="bilan" checked> Bilan</label>
+            <label><input type="checkbox" class="scope-tab" data-scope="tresorerie" checked> Tr&eacute;sorerie &amp; BFR</label>
+            <label><input type="checkbox" class="scope-tab" data-scope="kpis" checked> KPIs &amp; Ratios</label>
+            <label><input type="checkbox" class="scope-tab" data-scope="dettes" checked> Dettes Financi&egrave;res</label>
+            <label><input type="checkbox" class="scope-tab" data-scope="cfs" checked> Flux de Tr&eacute;sorerie</label>
+          </div>
+        </div>
+      </div>
+      <div class="export-section">
+        <h3>Format</h3>
+        <div class="export-formats">
+          <button class="fmt-btn active" data-fmt="pptx"><span class="fmt-icon">&#128202;</span><span class="fmt-label">PowerPoint</span><span class="fmt-sub">Charts &eacute;ditables</span></button>
+          <button class="fmt-btn disabled" data-fmt="pdf"><span class="fmt-icon">&#128196;</span><span class="fmt-label">PDF</span><span class="fmt-sub">Bient&ocirc;t</span></button>
+          <button class="fmt-btn disabled" data-fmt="xlsx"><span class="fmt-icon">&#128200;</span><span class="fmt-label">Excel</span><span class="fmt-sub">Bient&ocirc;t</span></button>
+        </div>
+      </div>
+      <div class="export-section export-notes">
+        <h3>Notes CFO</h3>
+        <textarea id="exportNotes" placeholder="Commentaires additionnels du CFO / Contr&ocirc;le de gestion...&#10;(zones de texte &eacute;ditables dans le PPT)"></textarea>
+      </div>
+      <div class="export-progress" id="exportProgress"></div>
+    </div>
+    <div class="export-modal-footer">
+      <button class="export-cancel" id="exportCancel">Annuler</button>
+      <button class="export-generate" id="exportGenerate">G&eacute;n&eacute;rer le PPT</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ TABS ═══ -->
+<nav class="tabs">
+  <button class="tab active" data-tab="synthese">Synth&egrave;se</button>
+  <button class="tab" data-tab="pl">Compte de R&eacute;sultat</button>
+  <button class="tab" data-tab="bilan">Bilan</button>
+  <button class="tab" data-tab="tresorerie">Tr&eacute;sorerie &amp; BFR</button>
+  <button class="tab" data-tab="kpis">KPIs &amp; Ratios</button>
+  <button class="tab" data-tab="dettes">Dettes Financi&egrave;res</button>
+  <button class="tab" data-tab="cfs">Flux de Tr&eacute;sorerie</button>
+</nav>
+
+<!-- ═══ MAIN CONTENT ═══ -->
+<main class="content">
+  <div id="warnBanner"></div>
+
+  <!-- TAB: SYNTHESE -->
+  <section id="synthese" class="panel active">
+    <div class="kpi-grid k6" id="synthKpis"></div>
+    <div class="chart-card health-card">
+      <h2 id="synthHealthTitle">Sant&eacute; financi&egrave;re <span>Indicateurs cl&eacute;s</span></h2>
+      <div class="health-grid" id="synthHealthGauges"></div>
+    </div>
+    <div class="chart-grid g3">
+      <div class="chart-card"><h2 id="synthPerfTitle">Performance mensuelle <span>CA &amp; EBITDA</span></h2><div class="chart-container" id="synthPerfWrap"><canvas id="synthPerfChart"></canvas></div></div>
+      <div class="chart-card"><h2 id="synthWaterfallTitle">Waterfall CA &rarr; R&eacute;sultat Net <span>Annuel</span></h2><div class="chart-container" id="synthWaterfallWrap"><canvas id="synthWaterfallChart"></canvas></div></div>
+      <div class="chart-card"><h2 id="synthCashConvTitle">Cash conversion <span>EBITDA &rarr; Free Cash Flow</span></h2><div class="chart-container" id="synthCashConvWrap"><canvas id="synthCashConvChart"></canvas></div><div class="conv-kpi" id="synthCashConvKpi"></div></div>
+    </div>
+    <div class="chart-grid g3">
+      <div class="chart-card"><h2 id="synthMarginsTitle">&Eacute;volution des marges <span>% CA</span></h2><div class="chart-container" id="synthMarginsWrap"><canvas id="synthMarginsChart"></canvas></div></div>
+      <div class="chart-card"><h2 id="synthMarginBridgeTitle">Pont de marge EBITDA <span>D&eacute;composition vs N-1</span></h2><div class="chart-container" id="synthMarginBridgeWrap"><canvas id="synthMarginBridgeChart"></canvas></div><div class="conv-kpi" id="synthMarginBridgeKpi"></div></div>
+      <div class="chart-card"><h2 id="synthChargesTitle">Structure des charges <span>YTD</span></h2><div class="chart-container" id="synthChargesWrap"><canvas id="synthChargesChart"></canvas></div></div>
+    </div>
+    <div class="chart-card insights-card">
+      <h2 id="synthInsightsTitle">Signaux et alertes CFO <span>Analyse automatique</span></h2>
+      <div class="insights-grid" id="synthInsights"></div>
+    </div>
+  </section>
+
+  <!-- TAB: COMPTE DE RESULTAT -->
+  <section id="pl" class="panel">
+    <div class="chart-card"><h2>Compte de R&eacute;sultat <span>Donn&eacute;es mensuelles en M FCFA &middot; Cliquer pour explorer</span></h2>
+      <div class="table-toolbar" id="plToolbar"><div class="table-toolbar-spacer"></div></div>
+      <div class="fin-table-wrap"><table class="fin-table" id="plTable"><thead id="plHead"></thead><tbody id="plBody"></tbody></table></div>
+    </div>
+    <div class="chart-grid g2" style="margin-top:20px">
+      <div class="chart-card"><h2>Waterfall du r&eacute;sultat</h2><div class="chart-container tall"><canvas id="plWaterfallChart"></canvas></div></div>
+      <div class="chart-card"><h2>Analyse des marges <span>% CA mensuel</span></h2><div class="chart-container tall"><canvas id="plMarginsChart"></canvas></div></div>
+    </div>
+  </section>
+
+  <!-- TAB: BILAN -->
+  <section id="bilan" class="panel">
+    <div class="chart-grid g2">
+      <div class="chart-card"><h2 id="bilanStructTitle">Structure du bilan <span>Actif vs Passif</span></h2><div class="chart-container"><canvas id="bilanStructChart"></canvas></div></div>
+      <div class="chart-card"><h2 id="bilanEvoTitle">&Eacute;volution mensuelle <span>Total Actif &amp; composantes</span></h2><div class="chart-container"><canvas id="bilanEvoChart"></canvas></div></div>
+    </div>
+    <div class="chart-card"><h2 id="bilanTableTitle">Bilan d&eacute;taill&eacute; <span>M FCFA &middot; Cliquer pour explorer</span></h2>
+      <div class="bilan-picker" id="bilanPicker"></div>
+      <div class="fin-table-wrap"><table class="fin-table" id="bilanTable"><thead id="bilanHead"></thead><tbody id="bilanBody"></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- TAB: TRESORERIE & BFR -->
+  <section id="tresorerie" class="panel">
+    <div class="section-title">Cycle de Conversion de Caisse <span id="cccPeriodTag" class="period-tag">LTM</span></div>
+    <div class="ccc-timeline" id="cccTimeline"></div>
+    <div class="chart-grid g3">
+      <div class="chart-card"><h2>D&eacute;composition du BFR <span id="bfrWaterfallSub">M FCFA &middot; LTM</span></h2><div class="chart-container"><canvas id="bfrWaterfallChart"></canvas></div></div>
+      <div class="chart-card"><h2>&Eacute;volution BFR / CA <span id="bfrEvoSub">en jours &middot; rolling 12M</span></h2><div class="chart-container"><canvas id="bfrEvoChart"></canvas></div></div>
+      <div class="chart-card"><h2>&Eacute;volution DSO / DIO / DPO <span id="ratioEvoSub">jours &middot; 12M glissants</span></h2><div class="chart-container"><canvas id="ratioEvoChart"></canvas></div></div>
+    </div>
+    <p class="data-footnote">Les s&eacute;ries mensuelles de BFR sont interpol&eacute;es &agrave; partir des cl&ocirc;tures trimestrielles ; prudence sur l&rsquo;analyse intra-trimestrielle.</p>
+  </section>
+
+  <!-- TAB: KPIs & RATIOS -->
+  <section id="kpis" class="panel">
+    <div class="chart-card"><h2>Profil financier <span>Radar de performance</span></h2><div class="chart-container tall"><canvas id="radarChart"></canvas></div></div>
+    <div class="section-title">Ratios cl&eacute;s</div>
+    <div class="ratio-grid" id="ratioGrid"></div>
+    <div class="chart-card"><h2>&Eacute;volution des KPIs <span>12 derniers mois</span></h2><div class="chart-container"><canvas id="kpiEvoChart"></canvas></div></div>
+  </section>
+
+  <!-- TAB: DETTES FINANCIERES -->
+  <section id="dettes" class="panel">
+    <div class="kpi-grid k4" id="dettesKpis"></div>
+    <div class="chart-grid g3">
+      <div class="chart-card"><h2>Composition de la dette <span>Par type</span></h2><div class="chart-container"><canvas id="detteTypeChart"></canvas></div></div>
+      <div class="chart-card"><h2 id="detteStackedTitle">&Eacute;volution dette &amp; tr&eacute;sorerie <span>Empil&eacute; &middot; dette nette en courbe</span></h2><div class="chart-container"><canvas id="detteStackedChart"></canvas></div></div>
+      <div class="chart-card"><h2 id="detteByNatureTitle">Dette par nature <span>Empil&eacute; mensuel</span></h2><div class="chart-container"><canvas id="detteByNatureChart"></canvas></div></div>
+    </div>
+    <div class="chart-card"><h2 id="dettesTableTitle">D&eacute;tail des dettes financi&egrave;res <span>M FCFA &middot; Cliquer pour d&eacute;rouler</span></h2>
+      <div class="table-toolbar" id="dettesToolbar"><div class="table-toolbar-spacer"></div></div>
+      <div class="fin-table-wrap"><table class="fin-table" id="dettesTable"><thead id="dettesHead"></thead><tbody id="dettesBody"></tbody></table></div>
+    </div>
+    <p class="data-footnote">Les ventilations mensuelles sont estim&eacute;es par interpolation &agrave; partir des soldes trimestriels disponibles.</p>
+  </section>
+
+  <!-- TAB: FLUX DE TRESORERIE -->
+  <section id="cfs" class="panel">
+    <div id="cfsQualityBanner"></div>
+    <div class="chart-card"><h2>Tableau des flux de tr&eacute;sorerie <span id="cfsHeaderSub">M FCFA &middot; M&eacute;thode indirecte &middot; reconstruit depuis rawPL + variations bilan</span></h2>
+      <div class="table-toolbar" id="cfsToolbar"><div class="table-toolbar-spacer"></div></div>
+      <div class="fin-table-wrap"><table class="fin-table" id="cfsTable"><thead id="cfsHead"></thead><tbody id="cfsBody"></tbody></table></div>
+    </div>
+    <div class="chart-grid g2" style="margin-top:20px">
+      <div class="chart-card"><h2>Waterfall des flux <span id="cfsWaterfallSub">M FCFA</span></h2><div class="chart-container tall"><canvas id="cfsWaterfallChart"></canvas></div></div>
+      <div class="chart-card"><h2>&Eacute;volution de la tr&eacute;sorerie <span id="cfsTresoSub">Cumul mensuel</span></h2><div class="chart-container tall"><canvas id="cfsTresoChart"></canvas></div></div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ═══ DRILL-DOWN PANEL ═══ -->
+<div class="drill-overlay" id="drillOverlay"></div>
+<div class="drill-panel" id="drillPanel">
+  <div class="drill-header">
+    <button class="drill-back" id="drillBack">&#9664;</button>
+    <div class="drill-title"><h3 id="drillTitleText"></h3><p id="drillSubText"></p></div>
+    <button class="drill-close" id="drillCloseBtn">&times;</button>
+  </div>
+  <div class="drill-body" id="drillBody"></div>
+</div>
+
+<!-- ═══ TOOLTIP ═══ -->
+<div class="fin-tooltip" id="finTooltip">
+  <div class="fin-tooltip-title" id="ttTitle"></div>
+  <div class="fin-tooltip-val" id="ttVal"></div>
+  <div class="fin-tooltip-pct" id="ttPct"></div>
+  <div class="fin-tooltip-delta" id="ttDelta"></div>
+  <div class="fin-tooltip-spark"><canvas id="ttSparkCanvas" width="200" height="32"></canvas></div>
+  <div class="fin-tooltip-hint">Cliquer pour voir les comptes</div>
+</div>
+
+</div><!-- .app -->
+
+<!-- ═══ JAVASCRIPT MODULES ═══ -->
+<!-- Ordre de chargement : config → utils → data → charts → tables → tabs → ui → export -->
+<script src="/copaci_finance_bi/static/src/dashboard/js/00_config.js"></script>
+<script src="/copaci_finance_bi/static/src/dashboard/js/01_utils.js"></script>
+<script src="/copaci_finance_bi/static/src/dashboard/js/02_data.js"></script>
+<script src="/copaci_finance_bi/static/src/dashboard/js/03_charts.js"></script>
+<script src="/copaci_finance_bi/static/src/dashboard/js/04_tables.js"></script>
+<script src="/copaci_finance_bi/static/src/dashboard/js/05_tabs.js"></script>
+<script src="/copaci_finance_bi/static/src/dashboard/js/06_ui.js"></script>
+<script src="/copaci_finance_bi/static/src/dashboard/js/07_export.js"></script>
+</body>
+</html>
