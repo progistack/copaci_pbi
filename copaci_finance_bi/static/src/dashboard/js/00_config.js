@@ -26,7 +26,8 @@ async function fetchOdooFinanceData(){
     if(status===404) throw new Error('Endpoint non disponible — module non installé ?');
     throw new Error('Erreur serveur (HTTP '+status+')');
   }
-  const data=await resp.json();
+  let data;
+  try{data=await resp.json()}catch(parseErr){throw new Error('Réponse serveur invalide (JSON corrompu)')}
   const cNames=(data._companies||[]).map(c=>typeof c==='object'?c.name:c);
   console.log('%c[BI Finance] Données reçues','color:#0d9488;font-weight:bold',
     '| Sociétés:',cNames.join(', ')||'?',
@@ -44,7 +45,10 @@ const COL = ['#0d9488','#0284c7','#10b981','#f59e0b','#ef4444','#ec4899','#06b6d
 // Rule: P&L display value = -balance (Odoo credits are negative)
 // IMPORTANT: prefixes must be mutually exclusive to avoid double counting
 const ACCT_MAP = {
-  // CA — exact codes only (class 70 has 6 specific accounts)
+  // CA — COPACI et DG utilisent le MEME plan comptable 8 chiffres.
+  // DG accounts have different display_names but identical SYSCOHADA codes.
+  // resolveAccountCode() via _accountMap resolves DG display_names to the
+  // same 8-digit codes → the prefixes below capture both companies.
   ca_local:['70211230','70211250','70211280'],
   ca_local_exo:['70211230'],
   ca_local_sans_asdi:['70211250'],

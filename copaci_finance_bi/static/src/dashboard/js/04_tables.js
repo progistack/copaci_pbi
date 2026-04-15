@@ -34,8 +34,16 @@ function closeDrill(){
   document.getElementById('drillPanel').classList.remove('open');
   document.body.style.overflow='';
   drillStack=[];
+  drillLinesState=null;
 }
-function drillGoBack(){if(drillStack.length>1){drillStack.pop();renderDrill()}}
+function drillGoBack(){
+  if(drillStack.length>1){
+    const popped=drillStack.pop();
+    if(popped.type==='account')drillLinesState=null;
+    const top=drillStack[drillStack.length-1];
+    if(top.type==='account'){renderDrillAccount()}else{renderDrill()}
+  }
+}
 // Keyboard: Escape closes drill
 document.addEventListener('keydown',function(e){if(e.key==='Escape'&&drillStack.length)closeDrill()});
 
@@ -195,54 +203,182 @@ function drillToChild(childId,monthIdx){
   const line=PL_DATA.find(l=>l.id===childId);
   if(line){drillStack.push({line,monthIdx});renderDrill()}
 }
+// ─── DRILL LEVEL 2 : Ecritures comptables d'un compte ──────
+// Au lieu de sauter directement dans Odoo, on affiche les écritures
+// DANS le dashboard (paginé). Un bouton "Ouvrir dans Odoo" permet
+// ensuite d'aller dans le Grand Livre natif si besoin.
+const DRILL_PAGE_SIZE=50;
+let drillLinesState=null; // {accountId,code,name,dateFrom,dateTo,offset,total,lines,loading}
+let _drillAbort=null; // AbortController — cancels in-flight drill fetch on new request
+
 function drillToAccount(code,id,monthIdx){
-  // Open Odoo GRAND LIVRE (General Ledger report, Enterprise module account_reports).
-  //
-  // Pourquoi le GL plutôt que "Journal Items" :
-  //   - View account-centrique : Victor voit l'évolution d'UN compte sur une période
-  //   - Date picker natif dans le header du rapport (range arbitraire, pas juste des présets)
-  //   - Posted-only toggle natif
-  //   - Drill par compte → expand pour voir les écritures à plat
-  //   - Export PDF/Excel built-in
-  //   - Sémantiquement aligné avec la demande : "détail du compte via grand livre"
-  //
-  // Limitations URL (client action OWL) :
-  //   - Les client actions comme le GL gèrent leur propre state interne. Les params
-  //     URL classiques ne sont honorés que partiellement.
-  //   - `active_id` + `active_model` sont forwardés dans le context serveur via le
-  //     routeur standard → le GL PEUT les lire comme "compte par défaut".
-  //   - `search_default_account_id` est un fallback si le report a une vue de recherche.
-  //   - Les dates ne peuvent pas être pré-remplies via URL. Le drill panel affiche
-  //     déjà le range exact (DD/MM/YYYY → DD/MM/YYYY) dans son sous-titre, Victor
-  //     peut le recopier en 2 secondes dans le date picker du GL.
-  //
-  // Migration future (module Odoo intégré) : tout ceci disparait. On utilisera
-  //   this.actionService.doAction({
-  //     type: "ir.actions.client",
-  //     tag: "account_report",
-  //     context: {
-  //       default_options: {
-  //         date: { date_from, date_to, mode: "range", filter: "custom" },
-  //         filter_account_ids: [id],
-  //         unposted_in_period: false
-  //       }
-  //     }
-  //   });
-  // à ce moment-là, tout est pré-rempli de manière garantie.
-  const base='https://copaci.odoo.com';
-  if(!id){
-    window.open(base+'/odoo/accounts','_blank','noopener,noreferrer');
+  if(!id){return}
+  // Compute date range from current drill context (reuse renderDrill's logic)
+  const yr=STATE.year;
+  const lm=CACHE.lastMonth[yr];
+  const lastIdx=(lm!=null&&lm>=0)?lm:11;
+  const isAll=monthIdx==null;
+  const lastDayOf=(y,m)=>new Date(y,m+1,0).getDate();
+  const iso=(y,m,d)=>y+'-'+String(m+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+  let dateFrom,dateTo;
+  if(isAll){
+    if(STATE.mode==='ltm'&&lastIdx<11){dateFrom=iso(yr-1,lastIdx+1,1)}
+    else{dateFrom=iso(yr,0,1)}
+    dateTo=iso(yr,lastIdx,lastDayOf(yr,lastIdx));
+  } else {
+    if(STATE.mode==='mensuel'){
+      dateFrom=iso(yr,monthIdx,1);dateTo=iso(yr,monthIdx,lastDayOf(yr,monthIdx));
+    } else if(STATE.mode==='ytd'){
+      dateFrom=iso(yr,0,1);dateTo=iso(yr,monthIdx,lastDayOf(yr,monthIdx));
+    } else { // ltm
+      if(monthIdx>=11){dateFrom=iso(yr,0,1)}
+      else{dateFrom=iso(yr-1,monthIdx+1,1)}
+      dateTo=iso(yr,monthIdx,lastDayOf(yr,monthIdx));
+    }
+  }
+  // Init state and push drill level
+  drillLinesState={accountId:id,code,name:'',dateFrom,dateTo,offset:0,total:0,lines:[],loading:true};
+  drillStack.push({type:'account',accountId:id,code,dateFrom,dateTo,monthIdx});
+  renderDrillAccount();
+  fetchDrillLines(id,dateFrom,dateTo,0);
+}
+
+async function fetchDrillLines(accountId,dateFrom,dateTo,offset){
+  // Cancel any in-flight request to prevent race conditions on rapid pagination
+  if(_drillAbort){_drillAbort.abort();_drillAbort=null}
+  const ctrl=new AbortController();
+  _drillAbort=ctrl;
+  try{
+    let url=`/copaci_finance_bi/drill?account_id=${accountId}&date_from=${dateFrom}&date_to=${dateTo}&offset=${offset}&limit=${DRILL_PAGE_SIZE}`;
+    if(Array.isArray(STATE.companyIds)&&STATE.companyIds.length){
+      url+='&company_ids='+STATE.companyIds.join(',');
+    }
+    const resp=await fetch(url,{signal:ctrl.signal});
+    if(!resp.ok)throw new Error('HTTP '+resp.status);
+    const data=await resp.json();
+    if(ctrl.signal.aborted)return;// superseded by newer request
+    drillLinesState.name=data.account?.name||'';
+    drillLinesState.code=data.account?.code||drillLinesState.code;
+    drillLinesState.total=data.total||0;
+    drillLinesState.offset=data.offset||0;
+    drillLinesState.lines=data.lines||[];
+    drillLinesState.loading=false;
+    renderDrillAccount();
+  }catch(err){
+    if(err.name==='AbortError')return;// request was cancelled, ignore
+    drillLinesState.loading=false;
+    drillLinesState.error=err.message;
+    renderDrillAccount();
+  }
+}
+
+function renderDrillAccount(){
+  const s=drillLinesState;if(!s)return;
+  const body=document.getElementById('drillBody');
+  const frDate=(d)=>{if(!d)return'';const p=d.split('-');return p[2]+'/'+p[1]+'/'+p[0]};
+
+  // Header
+  document.getElementById('drillTitleText').textContent=
+    (s.code||'')+' — '+(s.name||'Chargement...');
+  document.getElementById('drillSubText').textContent=
+    frDate(s.dateFrom)+' → '+frDate(s.dateTo)+' · '+s.total+' écritures';
+  document.getElementById('drillBack').style.display='block';
+
+  if(s.loading){
+    body.innerHTML='<div class="drill-loading">Chargement des écritures...</div>';
+    return;
+  }
+  if(s.error){
+    body.innerHTML='<div class="drill-empty" style="color:var(--red)">Erreur : '+esc(s.error)+'</div>';
     return;
   }
 
-  const accId=String(Number(id));
-  const qs=new URLSearchParams();
-  qs.set('active_id',accId);
-  qs.set('active_model','account.account');
-  qs.set('search_default_account_id',accId);
+  let html='';
+  // ── Header bar: count + Odoo button ──
+  html+=`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">`;
+  html+=`<span style="font-size:12px;color:var(--t3)">${s.total} écriture${s.total>1?'s':''} trouvée${s.total>1?'s':''}</span>`;
+  html+=`<button class="drill-odoo-btn" id="drillOpenOdoo">`;
+  html+=`<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`;
+  html+=`Ouvrir dans Odoo</button></div>`;
 
-  const url=base+'/odoo/action-account_reports.action_account_report_general_ledger?'+qs.toString();
-  window.open(url,'_blank','noopener,noreferrer');
+  // ── Table écritures — semantic CSS classes ──
+  if(s.lines.length){
+    html+=`<div class="drill-entries"><table><thead><tr>`;
+    html+=`<th>Date</th><th>Pièce</th><th>Journal</th><th>Partenaire</th><th>Libellé</th>`;
+    html+=`<th style="text-align:right">Débit</th><th style="text-align:right">Crédit</th><th style="text-align:right">Solde</th></tr></thead><tbody>`;
+    let runBal=0;
+    s.lines.forEach(l=>{
+      runBal+=l.balance;
+      html+=`<tr data-move-id="${l.move_id}" title="Ouvrir la pièce dans Odoo">`;
+      html+=`<td style="white-space:nowrap">${esc(frDate(l.date))}</td>`;
+      html+=`<td class="move-ref">${esc(l.move_name)}</td>`;
+      html+=`<td>${esc(l.journal)}</td>`;
+      html+=`<td>${esc(l.partner)}</td>`;
+      html+=`<td>${esc(l.label)}</td>`;
+      html+=`<td class="de">${l.debit?fmtInt(l.debit):''}</td>`;
+      html+=`<td class="cr">${l.credit?fmtInt(l.credit):''}</td>`;
+      html+=`<td class="bal${runBal<0?' neg':''}">${fmtInt(runBal)}</td>`;
+      html+=`</tr>`;
+    });
+    html+=`</tbody></table></div>`;
+  } else {
+    html+=`<div class="drill-empty">Aucune écriture sur cette période</div>`;
+  }
+
+  // ── Pagination — semantic CSS ──
+  if(s.total>DRILL_PAGE_SIZE){
+    const page=Math.floor(s.offset/DRILL_PAGE_SIZE)+1;
+    const pages=Math.ceil(s.total/DRILL_PAGE_SIZE);
+    html+=`<div class="drill-pager">`;
+    html+=`<button id="drillPrev" ${s.offset===0?'disabled':''}>← Précédent</button>`;
+    html+=`<span class="drill-pager-info">Page ${page} / ${pages}</span>`;
+    html+=`<button id="drillNext" ${s.offset+DRILL_PAGE_SIZE>=s.total?'disabled':''}>Suivant →</button>`;
+    html+=`</div>`;
+  }
+
+  body.innerHTML=html;
+
+  // ── Event bindings ──
+  const odooBtn=document.getElementById('drillOpenOdoo');
+  if(odooBtn){
+    odooBtn.addEventListener('click',()=>{
+      const base=window.location.origin;
+      const accId=String(Number(s.accountId));
+      const qs=new URLSearchParams();
+      qs.set('active_id',accId);
+      qs.set('active_model','account.account');
+      qs.set('search_default_account_id',accId);
+      const url=base+'/odoo/action-account_reports.action_account_report_general_ledger?'+qs.toString();
+      window.open(url,'_blank','noopener,noreferrer');
+    });
+  }
+
+  // Pagination prev/next
+  const prevBtn=document.getElementById('drillPrev');
+  const nextBtn=document.getElementById('drillNext');
+  if(prevBtn&&s.offset>0){
+    prevBtn.addEventListener('click',()=>{
+      drillLinesState.loading=true;renderDrillAccount();
+      fetchDrillLines(s.accountId,s.dateFrom,s.dateTo,s.offset-DRILL_PAGE_SIZE);
+    });
+  }
+  if(nextBtn&&s.offset+DRILL_PAGE_SIZE<s.total){
+    nextBtn.addEventListener('click',()=>{
+      drillLinesState.loading=true;renderDrillAccount();
+      fetchDrillLines(s.accountId,s.dateFrom,s.dateTo,s.offset+DRILL_PAGE_SIZE);
+    });
+  }
+
+  // Click sur une ligne → ouvrir la pièce comptable dans Odoo
+  body.querySelectorAll('tr[data-move-id]').forEach(tr=>{
+    tr.addEventListener('click',()=>{
+      const moveId=tr.dataset.moveId;
+      if(moveId){
+        const base=window.location.origin;
+        window.open(base+'/odoo/accounting/journal-entries/'+moveId,'_blank','noopener,noreferrer');
+      }
+    });
+  });
 }
 
 // ─── FINANCIAL TABLE BUILDER ─────────────────────────────────
@@ -540,24 +676,28 @@ function buildBilanTable(){
   bhtml+=renderSide(mainBilan.passif||BILAN_DATA.passif,totalPassifBase);
   document.getElementById('bilanBody').innerHTML=bhtml;
 
-  // Expand handlers + drill clickable cells (event delegation, plus d'inline onclick)
+  // Event delegation on bilanBody — single listener, bound once (same pattern as buildFinTable)
   const bilanBody=document.getElementById('bilanBody');
-  bilanBody.querySelectorAll('.row-expand-icon').forEach(icon=>{
-    icon.addEventListener('click',function(e){
-      e.stopPropagation();
-      const tid=this.dataset.target;
-      const willOpen=!this.classList.contains('open');
-      this.classList.toggle('open',willOpen);
-      if(willOpen){
-        bilanBody.querySelectorAll(`tr[data-parent="${tid}"]`).forEach(r=>r.classList.remove('row-hidden'));
-      } else {
-        cascadeHide(bilanBody,tid);
+  if(!bilanBody.dataset.bilanBound){
+    bilanBody.dataset.bilanBound='1';
+    bilanBody.addEventListener('click',function(e){
+      const icon=e.target.closest('.row-expand-icon');
+      if(icon){
+        e.stopPropagation();
+        const tid=icon.dataset.target;
+        const willOpen=!icon.classList.contains('open');
+        icon.classList.toggle('open',willOpen);
+        if(willOpen){
+          bilanBody.querySelectorAll(`tr[data-parent="${tid}"]`).forEach(r=>r.classList.remove('row-hidden'));
+        } else {
+          cascadeHide(bilanBody,tid);
+        }
+        return;
       }
+      const td=e.target.closest('td[data-bilan-id]');
+      if(td){openBilanDrill(td.dataset.bilanId)}
     });
-  });
-  bilanBody.querySelectorAll('td[data-bilan-id]').forEach(td=>{
-    td.addEventListener('click',()=>openBilanDrill(td.dataset.bilanId));
-  });
+  }
   // Render the period picker chips (kept in sync with getBilanPeriods)
   renderBilanPicker();
   // Re-apply the user's expand mode after rebuilding the body

@@ -48,15 +48,19 @@ function mountSeriesFilter(chartKey,canvasId){
   });
 }
 
-// Tab builders — each builds only when first accessed
+// Tab builders — each builds only when first accessed.
+// Wrapped in try/catch so a single tab crash doesn't block the entire dashboard.
+function safeTabBuild(name,fn){
+  return ()=>{try{fn()}catch(e){console.error('[BI Finance] Erreur onglet '+name+':',e)}}
+}
 const TAB_BUILDERS={
-  synthese:()=>{buildSynthese()},
-  pl:()=>{buildFinTable('plTable','plHead','plBody',PL_DATA);buildPLCharts();mountExpandControl(document.getElementById('plToolbar'),'plTable')},
-  bilan:()=>{buildBilanTable();buildBilanCharts()},
-  tresorerie:()=>{buildTresorerie()},
-  kpis:()=>{buildKpis()},
-  dettes:()=>{buildDettes()},
-  cfs:()=>{buildCFS()},
+  synthese:safeTabBuild('synthese',()=>{buildSynthese()}),
+  pl:safeTabBuild('pl',()=>{buildFinTable('plTable','plHead','plBody',PL_DATA);buildPLCharts();mountExpandControl(document.getElementById('plToolbar'),'plTable')}),
+  bilan:safeTabBuild('bilan',()=>{buildBilanTable();buildBilanCharts()}),
+  tresorerie:safeTabBuild('tresorerie',()=>{buildTresorerie()}),
+  kpis:safeTabBuild('kpis',()=>{buildKpis()}),
+  dettes:safeTabBuild('dettes',()=>{buildDettes()}),
+  cfs:safeTabBuild('cfs',()=>{buildCFS()}),
 };
 
 function switchTab(tabId){
@@ -163,6 +167,65 @@ document.getElementById('themeBtn').addEventListener('click',toggleTheme);
 document.getElementById('drillOverlay').addEventListener('click',closeDrill);
 document.getElementById('drillBack').addEventListener('click',drillGoBack);
 document.getElementById('drillCloseBtn').addEventListener('click',closeDrill);
+
+// ─── DRILL PANEL RESIZE (drag handle) ───────────────────────
+// Allows the user to drag the left edge of the drill panel to resize it.
+// Updates the --drill-w CSS variable on the panel. Min 380px, max 85vw.
+(function initDrillResize(){
+  const handle=document.getElementById('drillResize');
+  const panel=document.getElementById('drillPanel');
+  if(!handle||!panel)return;
+  let dragging=false,startX=0,startW=0,rafId=0;
+  function applyWidth(clientX){
+    cancelAnimationFrame(rafId);
+    rafId=requestAnimationFrame(()=>{
+      const delta=startX-clientX;
+      const maxW=Math.floor(window.innerWidth*0.85);
+      const newW=Math.max(380,Math.min(maxW,startW+delta));
+      panel.style.setProperty('--drill-w',newW+'px');
+    });
+  }
+  handle.addEventListener('mousedown',function(e){
+    e.preventDefault();
+    dragging=true;
+    startX=e.clientX;
+    startW=panel.offsetWidth;
+    panel.classList.add('resizing');
+    document.body.style.cursor='col-resize';
+    document.body.style.userSelect='none';
+  });
+  document.addEventListener('mousemove',function(e){
+    if(!dragging)return;
+    applyWidth(e.clientX);
+  });
+  document.addEventListener('mouseup',function(){
+    if(!dragging)return;
+    dragging=false;
+    cancelAnimationFrame(rafId);
+    panel.classList.remove('resizing');
+    document.body.style.cursor='';
+    document.body.style.userSelect='';
+  });
+  // Touch support (mobile / tablet)
+  handle.addEventListener('touchstart',function(e){
+    if(e.touches.length!==1)return;
+    e.preventDefault();
+    dragging=true;
+    startX=e.touches[0].clientX;
+    startW=panel.offsetWidth;
+    panel.classList.add('resizing');
+  },{passive:false});
+  document.addEventListener('touchmove',function(e){
+    if(!dragging||e.touches.length!==1)return;
+    applyWidth(e.touches[0].clientX);
+    panel.style.setProperty('--drill-w',newW+'px');
+  },{passive:true});
+  document.addEventListener('touchend',function(){
+    if(!dragging)return;
+    dragging=false;
+    panel.classList.remove('resizing');
+  });
+})();
 
 // ─── INIT ────────────────────────────────────────────────────
 // ─── DATA LOADING ────────────────────────────────────────────
