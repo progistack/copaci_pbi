@@ -221,3 +221,57 @@ class FinanceBIController(http.Controller):
                 content_type='text/html; charset=utf-8',
                 status=404,
             )
+
+    # ------------------------------------------------------------------
+    #  Static file server — sert les JS/CSS/libs du dashboard
+    #  Odoo.sh utilise des assets hashes ; le chemin /<module>/static/
+    #  ne fonctionne pas pour les pages servies hors du framework OWL.
+    #  Cette route sert les fichiers depuis le repertoire du module.
+    # ------------------------------------------------------------------
+    _STATIC_DIR = os.path.join(_MODULE_DIR, 'static')
+
+    _MIME = {
+        '.js': 'application/javascript',
+        '.css': 'text/css',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.svg': 'image/svg+xml',
+        '.woff2': 'font/woff2',
+        '.json': 'application/json',
+    }
+
+    @http.route('/copaci_finance_bi/static/<path:filepath>',
+                type='http', auth='user', csrf=False)
+    def serve_static(self, filepath, **kwargs):
+        """Sert les fichiers statiques du dashboard (JS, CSS, images)."""
+        # Securite : empecher la traversee de repertoire
+        safe_path = os.path.normpath(filepath)
+        if safe_path.startswith('..') or safe_path.startswith(os.sep):
+            return Response('Forbidden', status=403)
+
+        full_path = os.path.join(self._STATIC_DIR, safe_path)
+        # Verifier que le fichier est bien dans le repertoire static
+        if not os.path.abspath(full_path).startswith(
+                os.path.abspath(self._STATIC_DIR)):
+            return Response('Forbidden', status=403)
+
+        if not os.path.isfile(full_path):
+            return Response('Not Found', status=404)
+
+        ext = os.path.splitext(full_path)[1].lower()
+        content_type = self._MIME.get(ext, 'application/octet-stream')
+
+        try:
+            with open(full_path, 'rb') as f:
+                content = f.read()
+            return Response(
+                content,
+                content_type=content_type,
+                headers={
+                    'Cache-Control': 'public, max-age=86400',
+                },
+            )
+        except Exception as e:
+            _logger.error('Finance BI: erreur lecture static %s — %s',
+                          filepath, e)
+            return Response('Internal Error', status=500)
