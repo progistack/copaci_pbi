@@ -339,9 +339,9 @@ function renderDrillAccount(){
   body.innerHTML=html;
 
   // ── Event bindings ──
+  const isOdoo=!window.location.port||['80','443'].includes(window.location.port);
   const odooBtn=document.getElementById('drillOpenOdoo');
   if(odooBtn){
-    const isOdoo=!window.location.port||['80','443'].includes(window.location.port);
     if(!isOdoo){
       odooBtn.disabled=true;
       odooBtn.title='Disponible uniquement sur Odoo (staging / production)';
