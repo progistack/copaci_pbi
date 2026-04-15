@@ -344,10 +344,22 @@ function renderDrillAccount(){
     odooBtn.addEventListener('click',()=>{
       const base=window.location.origin;
       const accId=String(Number(s.accountId));
+      // Build Odoo GL URL with date range and company filter in context
+      const ctx={
+        date:{date_from:s.dateFrom,date_to:s.dateTo,filter:'custom',mode:'range'},
+        active_id:Number(accId),
+        active_model:'account.account',
+        search_default_account_id:Number(accId),
+      };
+      // Add company filter if specific company selected
+      if(Array.isArray(STATE.companyIds)&&STATE.companyIds.length===1){
+        ctx.allowed_company_ids=STATE.companyIds;
+      }
       const qs=new URLSearchParams();
       qs.set('active_id',accId);
       qs.set('active_model','account.account');
       qs.set('search_default_account_id',accId);
+      qs.set('context',JSON.stringify(ctx));
       const url=base+'/odoo/action-account_reports.action_account_report_general_ledger?'+qs.toString();
       window.open(url,'_blank','noopener,noreferrer');
     });
