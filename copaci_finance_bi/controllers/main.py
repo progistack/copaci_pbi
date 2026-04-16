@@ -428,7 +428,9 @@ class FinanceBIController(http.Controller):
     #  - auth='user' : session requise
     #  - Path traversal : double vérification (normpath + abspath)
     #  - MIME mapping explicite (pas de Content-Type deviné)
-    #  - Cache 24h (fichiers statiques immuables par release)
+    #  - ETag + must-revalidate : invalidation immediate au deploy, 304 si
+    #    inchange (economise la bande passante sans risquer de servir un
+    #    fichier obsolete apres un git push + upgrade module)
     # ------------------------------------------------------------------
     _STATIC_DIR = os.path.join(_MODULE_DIR, 'static')
     _MIME = {
@@ -460,10 +462,22 @@ class FinanceBIController(http.Controller):
         ext = os.path.splitext(full_path)[1].lower()
         content_type = self._MIME.get(ext, 'application/octet-stream')
         try:
+            # ETag base sur mtime+taille : change des qu'un git pull rewrite
+            # le fichier, donc un upgrade module invalide le cache navigateur
+            stat = os.stat(full_path)
+            etag = '"%d-%d"' % (int(stat.st_mtime), stat.st_size)
+            if request.httprequest.headers.get('If-None-Match') == etag:
+                return Response(status=304, headers={
+                    'ETag': etag,
+                    'Cache-Control': 'public, max-age=0, must-revalidate',
+                })
             with open(full_path, 'rb') as f:
                 content = f.read()
             return Response(content, content_type=content_type,
-                headers={'Cache-Control': 'public, max-age=86400'})
+                headers={
+                    'ETag': etag,
+                    'Cache-Control': 'public, max-age=0, must-revalidate',
+                })
         except Exception as e:
             _logger.error(
                 'Finance BI: erreur lecture static %s — %s', filepath, e)
