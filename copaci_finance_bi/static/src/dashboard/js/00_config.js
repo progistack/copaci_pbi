@@ -145,11 +145,19 @@ function renderCompanySelector(companies){
   // companies = [{id:1,name:'COPACI'},{id:3,name:'COPACI DG'}] (depuis controller v10+)
   // ou ['COPACI','COPACI DG'] (compatibilite v9)
   const parsed=companies.map(c=>typeof c==='object'?c:{id:0,name:String(c)});
+  // Store parsed list globally for contribution charts
+  STATE._companies=parsed;
   if(parsed.length<=1){
     wrap.classList.add('single');// cache le selecteur si une seule societe
     return;
   }
   wrap.classList.remove('single');
+  // Default to COPACI (id=1) for multi-company users on initial load.
+  // Provides the most coherent single-entity view; user can switch to "Toutes".
+  if(!STATE.companyIds && !STATE._companyDefaultApplied){
+    const copaci=parsed.find(c=>c.id===1);
+    if(copaci){STATE.companyIds=[1];STATE._companyDefaultApplied=true}
+  }
   // Construire les pills : "Toutes" + une par societe
   const allIds=parsed.map(c=>c.id);
   const isAll=!Array.isArray(STATE.companyIds)||STATE.companyIds.length===0

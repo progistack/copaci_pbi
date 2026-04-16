@@ -329,3 +329,52 @@ function deriveMode(rawPL, mode, rawN1, lastMonth){
     return line;
   });
 }
+
+// ─── PER-COMPANY CONTRIBUTION ────────────────────────────────
+// Builds per-company P&L (CA, EBITDA) from RAW_DATA, bypassing STATE.companyIds.
+// Returns null if single-company. Otherwise { companyId: {name,ca,ebitda,caM,ebitdaM} }.
+// Used by Synthèse contribution charts — only visible for multi-company users.
+function buildCompanyContrib(year){
+  const companies=STATE._companies;
+  if(!companies||companies.length<=1)return null;
+  const bal=RAW_DATA&&RAW_DATA['balance'+year];
+  if(!bal)return null;
+  const lastMo=CACHE.lastMonth[year];
+  const result={};
+  companies.forEach(c=>{
+    // Build acctData for this company only (inline filter, no STATE mutation)
+    const acctData={};
+    const monthFlag=new Array(12).fill(false);
+    bal.forEach(row=>{
+      const accountId=row.account_id?.[0];
+      const label=row.account_id?.[1]||'';
+      const fullCode=resolveAccountCode(accountId,label);
+      if(!fullCode)return;
+      const comp=resolveAccountCompany(accountId);
+      if((comp?comp.id:1)!==c.id)return;
+      const mi=parseMonth(row['date:month']||'');
+      if(mi<0)return;
+      if(!acctData[fullCode])acctData[fullCode]={months:new Array(12).fill(0),total:0,name:label,id:accountId};
+      acctData[fullCode].months[mi]+=row.balance||0;
+      acctData[fullCode].total+=row.balance||0;
+      if((row.balance||0)!==0)monthFlag[mi]=true;
+    });
+    acctData.__monthFlag=monthFlag;
+    // Build PL then apply mode transform
+    let pl=buildPLData(acctData);
+    const info=computeYearStatus(acctData,year);
+    if(info.status==='open')pl=maskEmptyMonths(pl,monthFlag);
+    const transformed=deriveMode(pl,STATE.mode,null,lastMo);
+    const caLine=transformed.find(l=>l.id==='ca_net');
+    const ebitdaLine=transformed.find(l=>l.id==='ebitda');
+    const sumM=(line)=>{if(!line||!line.m)return 0;return line.m.reduce((s,v)=>s+(v||0),0)};
+    result[c.id]={
+      name:c.name,
+      ca:sumM(caLine),
+      ebitda:sumM(ebitdaLine),
+      caM:caLine?caLine.m.slice():new Array(12).fill(0),
+      ebitdaM:ebitdaLine?ebitdaLine.m.slice():new Array(12).fill(0),
+    };
+  });
+  return result;
+}

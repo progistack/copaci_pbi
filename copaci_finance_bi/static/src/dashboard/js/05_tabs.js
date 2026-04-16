@@ -175,6 +175,7 @@ function buildSynthese(){
   buildSynthHealth();
   buildSynthCashConversion();
   buildSynthMarginBridge();
+  buildSynthCompanyContrib();
   buildSynthInsights();
 }
 
@@ -548,6 +549,85 @@ function buildSynthMarginBridge(){
       <div class="kpi-mini"><div class="kpi-mini-label">Marge N / N-1</div><div class="kpi-mini-val">${mgN.toFixed(1).replace('.',',')}% / ${mgN1.toFixed(1).replace('.',',')}%</div></div>
       <div class="kpi-mini"><div class="kpi-mini-label">\u0394 Marge</div><div class="kpi-mini-val ${dMgCls}">${arrow(dMg)} ${Math.abs(dMg*100).toFixed(0)} bps</div></div>
     `;
+  }
+}
+
+// ─── COMPANY CONTRIBUTION (multi-societe only) ──────────────
+// Two stacked bar charts showing each company's contribution to CA and EBITDA.
+// Only visible when the user has access to 2+ companies.
+const CONTRIB_COLORS=['#0d9488','#6366f1','#f59e0b','#ec4899','#8b5cf6'];
+function buildSynthCompanyContrib(){
+  const row=document.getElementById('synthContribRow');
+  if(!row)return;
+  const contrib=buildCompanyContrib(STATE.year);
+  if(!contrib){row.style.display='none';return}
+  row.style.display='';
+  const companies=STATE._companies||[];
+  const labels=activeLabels();
+  const lastMo=CACHE.lastMonth[STATE.year];
+  const lastIdx=(lastMo!=null&&lastMo>=0)?lastMo:11;
+  // Period label
+  const modeLabel={mensuel:'Mensuel',ytd:'YTD',ltm:'LTM'}[STATE.mode]||'';
+  const periodLabel=modeLabel+' '+MO[lastIdx]+' '+STATE.year;
+  const caTitle=document.getElementById('synthContribCaTitle');
+  if(caTitle)caTitle.innerHTML=`Contribution au CA par soci\u00e9t\u00e9 <span>${esc(periodLabel)}</span>`;
+  const ebTitle=document.getElementById('synthContribEbitdaTitle');
+  if(ebTitle)ebTitle.innerHTML=`Contribution \u00e0 l'EBITDA par soci\u00e9t\u00e9 <span>${esc(periodLabel)}</span>`;
+
+  // Build datasets — one per company, stacked
+  function buildChart(canvasId,chartKey,field){
+    const datasets=[];
+    companies.forEach((c,ci)=>{
+      const d=contrib[c.id];
+      if(!d)return;
+      const raw=d[field];// m[12] array
+      const sliced=activeRange(raw);
+      datasets.push({
+        label:c.name,
+        data:sliced,
+        backgroundColor:toRgba(CONTRIB_COLORS[ci%CONTRIB_COLORS.length],0.75),
+        borderRadius:3,
+      });
+    });
+    const opts=chartOpts('bar',{legend:false});
+    cc(chartKey,document.getElementById(canvasId),{type:'bar',
+      data:{labels,datasets},
+      options:{...opts,layout:{padding:{top:18}},
+        scales:{
+          x:{stacked:true,grid:{display:false},ticks:{color:isDark()?'#94a3b8':'#64748b',font:{size:10}}},
+          y:{stacked:true,grid:{color:isDark()?'rgba(148,163,184,0.15)':'rgba(15,23,42,0.08)'},ticks:{color:isDark()?'#94a3b8':'#64748b',font:{size:10},callback:v=>fmt(v)}}
+        },
+        plugins:{...opts.plugins,
+          datalabels:{display:false},
+          tooltip:{callbacks:{label:function(ctx){return ctx.dataset.label+' : '+fmt(ctx.parsed.y)+' M'}}}
+        }
+      }
+    });
+    mountSeriesFilter(chartKey,canvasId);
+  }
+  buildChart('synthContribCaChart','sc1','caM');
+  buildChart('synthContribEbitdaChart','sc2','ebitdaM');
+
+  // KPI summaries under each chart
+  const totalCa=companies.reduce((s,c)=>{const d=contrib[c.id];return s+(d?d.ca:0)},0);
+  const totalEbitda=companies.reduce((s,c)=>{const d=contrib[c.id];return s+(d?d.ebitda:0)},0);
+  const caKpi=document.getElementById('synthContribCaKpi');
+  if(caKpi){
+    caKpi.innerHTML=companies.map((c,ci)=>{
+      const d=contrib[c.id];if(!d)return'';
+      const pct=totalCa?Math.abs(d.ca/totalCa*100):0;
+      const dot=`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${CONTRIB_COLORS[ci%CONTRIB_COLORS.length]};margin-right:6px"></span>`;
+      return `<div class="kpi-mini">${dot}<div class="kpi-mini-label">${esc(c.name)}</div><div class="kpi-mini-val">${fmt(d.ca)} M &middot; ${pct.toFixed(1).replace('.',',')}%</div></div>`;
+    }).join('');
+  }
+  const ebKpi=document.getElementById('synthContribEbitdaKpi');
+  if(ebKpi){
+    ebKpi.innerHTML=companies.map((c,ci)=>{
+      const d=contrib[c.id];if(!d)return'';
+      const pct=totalEbitda?Math.abs(d.ebitda/totalEbitda*100):0;
+      const dot=`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${CONTRIB_COLORS[ci%CONTRIB_COLORS.length]};margin-right:6px"></span>`;
+      return `<div class="kpi-mini">${dot}<div class="kpi-mini-label">${esc(c.name)}</div><div class="kpi-mini-val">${fmt(d.ebitda)} M &middot; ${pct.toFixed(1).replace('.',',')}%</div></div>`;
+    }).join('');
   }
 }
 
