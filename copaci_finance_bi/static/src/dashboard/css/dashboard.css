@@ -2,6 +2,12 @@
    COPACI Finance BI — CSS
    Pattern: Ventes V6 (teal/blue accent, light default)
    ═══════════════════════════════════════════════════════════════ */
+/* Inter — auto-hosted (no external Google Fonts dependency) */
+@font-face{font-family:'Inter';font-style:normal;font-weight:400;font-display:swap;src:url('../fonts/inter-latin-400.woff2') format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:500;font-display:swap;src:url('../fonts/inter-latin-500.woff2') format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:600;font-display:swap;src:url('../fonts/inter-latin-600.woff2') format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:700;font-display:swap;src:url('../fonts/inter-latin-700.woff2') format('woff2')}
+@font-face{font-family:'Inter';font-style:normal;font-weight:800;font-display:swap;src:url('../fonts/inter-latin-800.woff2') format('woff2')}
 :root,[data-theme="dark"]{--bg:#0c1222;--bg2:#111a2e;--card:rgba(255,255,255,0.05);--card-h:rgba(255,255,255,0.08);--brd:rgba(255,255,255,0.1);--brd-h:rgba(255,255,255,0.2);--t1:#f0f0f5;--t2:rgba(255,255,255,0.6);--t3:rgba(255,255,255,0.4);--inp:rgba(255,255,255,0.08);--inp-b:rgba(255,255,255,0.15);--accent:#0d9488;--accent2:#0284c7;--green:#10b981;--red:#ef4444;--amber:#f59e0b;--purple:#8b5cf6;--row-hover:rgba(13,148,136,0.06);--row-alt:rgba(255,255,255,0.02);--total-bg:rgba(13,148,136,0.08);--subtotal-bg:rgba(13,148,136,0.04)}
 [data-theme="light"]{--bg:#f0f4f8;--bg2:#ffffff;--card:#ffffff;--card-h:#ffffff;--brd:rgba(15,23,42,0.12);--brd-h:rgba(15,23,42,0.22);--t1:#0f172a;--t2:#475569;--t3:#64748b;--inp:#f1f5f9;--inp-b:#cbd5e1;--accent:#0f766e;--accent2:#0369a1;--green:#047857;--red:#dc2626;--amber:#b45309;--purple:#7c3aed;--row-hover:rgba(15,118,110,0.06);--row-alt:rgba(15,23,42,0.02);--total-bg:rgba(15,118,110,0.08);--subtotal-bg:rgba(15,118,110,0.04)}
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}

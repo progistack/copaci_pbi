@@ -395,7 +395,17 @@ class FinanceBIController(http.Controller):
         try:
             with open(_DASHBOARD_PATH, 'r', encoding='utf-8') as f:
                 html = f.read()
-            return Response(html, content_type='text/html; charset=utf-8')
+            return Response(html, content_type='text/html; charset=utf-8',
+                headers={
+                    'Content-Security-Policy': (
+                        "default-src 'self'; "
+                        "script-src 'self' 'unsafe-inline'; "
+                        "style-src 'self' 'unsafe-inline'; "
+                        "font-src 'self' data:; "
+                        "connect-src 'self'; "
+                        "img-src 'self' data:; "
+                    ),
+                })
         except FileNotFoundError:
             _logger.error(
                 'Finance BI: dashboard HTML non trouve')

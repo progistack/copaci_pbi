@@ -77,6 +77,7 @@ function switchTab(tabId){
 function toggleTheme(){
   const el=document.documentElement;
   el.setAttribute('data-theme',el.getAttribute('data-theme')==='dark'?'light':'dark');
+  _refreshDarkCache();
   // Destroy all charts and mark ALL tabs as needing rebuild
   destroyChartsFor('');
   Object.keys(tabBuilt).forEach(k=>tabBuilt[k]=false);

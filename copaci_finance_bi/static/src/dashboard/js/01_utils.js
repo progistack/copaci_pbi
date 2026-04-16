@@ -406,7 +406,11 @@ function activeRange(arr){
   if(STATE.selectedMonth!=='all')end=Math.min(end,+STATE.selectedMonth+1);
   return (arr||[]).slice(0,end);
 }
-function isDark(){return document.documentElement.getAttribute('data-theme')==='dark'}
+// Cached dark-mode flag — updated by toggleTheme() in 06_ui.js.
+// Avoids ~30 DOM attribute reads per tab rebuild.
+let _darkCache=document.documentElement.getAttribute('data-theme')==='dark';
+function isDark(){return _darkCache}
+function _refreshDarkCache(){_darkCache=document.documentElement.getAttribute('data-theme')==='dark'}
 // Safe color conversion — handles #hex, rgb(), rgba()
 function toRgba(c,a){if(!c)return'rgba(0,0,0,'+a+')';if(c.startsWith('#')){const h=c.replace('#','');const r=parseInt(h.substring(0,2),16),g=parseInt(h.substring(2,4),16),b=parseInt(h.substring(4,6),16);return'rgba('+r+','+g+','+b+','+a+')'}if(c.startsWith('rgba'))return c.replace(/,\s*[\d.]+\)/,','+a+')');if(c.startsWith('rgb'))return c.replace('rgb','rgba').replace(')',','+a+')');return c}
 // Sanitize text for safe DOM insertion

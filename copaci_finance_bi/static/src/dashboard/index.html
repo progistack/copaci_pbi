@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>COPACI — Finance BI Dashboard</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/copaci_finance_bi/static/src/dashboard/css/dashboard.css">
 <script src="/copaci_finance_bi/static/src/lib/chart.umd.min.js"></script>
 <script src="/copaci_finance_bi/static/src/lib/chartjs-plugin-datalabels.min.js"></script>
@@ -267,7 +266,9 @@
 <!-- Ordre de chargement : config → utils → data → charts → tables → tabs → ui → export -->
 <script src="/copaci_finance_bi/static/src/dashboard/js/00_config.js"></script>
 <script src="/copaci_finance_bi/static/src/dashboard/js/01_utils.js"></script>
-<script src="/copaci_finance_bi/static/src/dashboard/js/02_data.js"></script>
+<script src="/copaci_finance_bi/static/src/dashboard/js/02a_data_core.js"></script>
+<script src="/copaci_finance_bi/static/src/dashboard/js/02b_data_bilan.js"></script>
+<script src="/copaci_finance_bi/static/src/dashboard/js/02c_data_refresh.js"></script>
 <script src="/copaci_finance_bi/static/src/dashboard/js/03_charts.js"></script>
 <script src="/copaci_finance_bi/static/src/dashboard/js/04_tables.js"></script>
 <script src="/copaci_finance_bi/static/src/dashboard/js/05_tabs.js"></script>
