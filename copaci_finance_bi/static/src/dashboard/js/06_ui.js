@@ -217,9 +217,9 @@ document.getElementById('drillCloseBtn').addEventListener('click',closeDrill);
   },{passive:false});
   document.addEventListener('touchmove',function(e){
     if(!dragging||e.touches.length!==1)return;
+    e.preventDefault();
     applyWidth(e.touches[0].clientX);
-    panel.style.setProperty('--drill-w',newW+'px');
-  },{passive:true});
+  },{passive:false});
   document.addEventListener('touchend',function(){
     if(!dragging)return;
     dragging=false;
