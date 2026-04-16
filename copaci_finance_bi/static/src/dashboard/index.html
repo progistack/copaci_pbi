@@ -143,27 +143,33 @@
 
   <!-- TAB: SYNTHESE -->
   <section id="synthese" class="panel active">
+    <!-- 1. KPIs headline -->
     <div class="kpi-grid k6" id="synthKpis"></div>
+    <!-- 2. Company contribution (multi-societe only) — right after KPIs for context -->
+    <div class="chart-grid g2" id="synthContribRow" style="display:none">
+      <div class="chart-card"><h2 id="synthContribCaTitle">Contribution au CA <span>R&eacute;partition</span></h2><div class="chart-container short"><canvas id="synthContribCaChart"></canvas></div><div class="contrib-legend" id="synthContribCaKpi"></div></div>
+      <div class="chart-card"><h2 id="synthContribEbitdaTitle">Contribution &agrave; l'EBITDA <span>R&eacute;partition</span></h2><div class="chart-container short"><canvas id="synthContribEbitdaChart"></canvas></div><div class="contrib-legend" id="synthContribEbitdaKpi"></div></div>
+    </div>
+    <!-- 3. Sante financiere -->
     <div class="chart-card health-card">
       <h2 id="synthHealthTitle">Sant&eacute; financi&egrave;re <span>Indicateurs cl&eacute;s</span></h2>
       <div class="health-grid" id="synthHealthGauges"></div>
     </div>
+    <!-- 4. Performance & Waterfall -->
     <div class="chart-grid g3">
       <div class="chart-card"><h2 id="synthPerfTitle">Performance mensuelle <span>CA &amp; EBITDA</span></h2><div class="chart-container" id="synthPerfWrap"><canvas id="synthPerfChart"></canvas></div></div>
       <div class="chart-card"><h2 id="synthWaterfallTitle">Waterfall CA &rarr; R&eacute;sultat Net <span>Annuel</span></h2><div class="chart-container" id="synthWaterfallWrap"><canvas id="synthWaterfallChart"></canvas></div></div>
       <div class="chart-card"><h2 id="synthCashConvTitle">Cash conversion <span>EBITDA &rarr; Free Cash Flow</span></h2><div class="chart-container" id="synthCashConvWrap"><canvas id="synthCashConvChart"></canvas></div><div class="conv-kpi" id="synthCashConvKpi"></div></div>
     </div>
+    <!-- 5. Marges & Charges -->
     <div class="chart-grid g3">
       <div class="chart-card"><h2 id="synthMarginsTitle">&Eacute;volution des marges <span>% CA</span></h2><div class="chart-container" id="synthMarginsWrap"><canvas id="synthMarginsChart"></canvas></div></div>
       <div class="chart-card"><h2 id="synthMarginBridgeTitle">Pont de marge EBITDA <span>D&eacute;composition vs N-1</span></h2><div class="chart-container" id="synthMarginBridgeWrap"><canvas id="synthMarginBridgeChart"></canvas></div><div class="conv-kpi" id="synthMarginBridgeKpi"></div></div>
       <div class="chart-card"><h2 id="synthChargesTitle">Structure des charges <span>YTD</span></h2><div class="chart-container" id="synthChargesWrap"><canvas id="synthChargesChart"></canvas></div></div>
     </div>
-    <div class="chart-grid g2" id="synthContribRow" style="display:none">
-      <div class="chart-card"><h2 id="synthContribCaTitle">Contribution au CA par soci&eacute;t&eacute; <span>R&eacute;partition mensuelle</span></h2><div class="chart-container"><canvas id="synthContribCaChart"></canvas></div><div class="conv-kpi" id="synthContribCaKpi"></div></div>
-      <div class="chart-card"><h2 id="synthContribEbitdaTitle">Contribution &agrave; l'EBITDA par soci&eacute;t&eacute; <span>R&eacute;partition mensuelle</span></h2><div class="chart-container"><canvas id="synthContribEbitdaChart"></canvas></div><div class="conv-kpi" id="synthContribEbitdaKpi"></div></div>
-    </div>
+    <!-- 6. Signaux & alertes -->
     <div class="chart-card insights-card">
-      <h2 id="synthInsightsTitle">Signaux et alertes CFO <span>Analyse automatique</span></h2>
+      <h2 id="synthInsightsTitle">Signaux &amp; alertes CFO <span>Analyse automatique</span></h2>
       <div class="insights-grid" id="synthInsights"></div>
     </div>
   </section>
@@ -215,16 +221,25 @@
   <!-- TAB: DETTES FINANCIERES -->
   <section id="dettes" class="panel">
     <div class="kpi-grid k4" id="dettesKpis"></div>
+    <!-- Bank filter pills (populated by JS) -->
+    <div class="bank-filter-wrap" id="bankFilterWrap" style="display:none"></div>
     <div class="chart-grid g3">
-      <div class="chart-card"><h2>Composition de la dette <span>Par type</span></h2><div class="chart-container"><canvas id="detteTypeChart"></canvas></div></div>
-      <div class="chart-card"><h2 id="detteStackedTitle">&Eacute;volution dette &amp; tr&eacute;sorerie <span>Empil&eacute; &middot; dette nette en courbe</span></h2><div class="chart-container"><canvas id="detteStackedChart"></canvas></div></div>
-      <div class="chart-card"><h2 id="detteByNatureTitle">Dette par nature <span>Empil&eacute; mensuel</span></h2><div class="chart-container"><canvas id="detteByNatureChart"></canvas></div></div>
+      <div class="chart-card"><h2 id="detteBankTitle">Exposition bancaire <span>Par &eacute;tablissement</span></h2><div class="chart-container"><canvas id="detteBankChart"></canvas></div></div>
+      <div class="chart-card"><h2 id="detteStackedTitle">&Eacute;volution dette &amp; tr&eacute;sorerie <span>Dette nette en courbe</span></h2><div class="chart-container"><canvas id="detteStackedChart"></canvas></div></div>
+      <div class="chart-card"><h2 id="detteByNatureTitle">Dette par nature <span>Mensuel</span></h2><div class="chart-container"><canvas id="detteByNatureChart"></canvas></div></div>
     </div>
-    <div class="chart-card"><h2 id="dettesTableTitle">D&eacute;tail des dettes financi&egrave;res <span>M FCFA &middot; Cliquer pour d&eacute;rouler</span></h2>
-      <div class="table-toolbar" id="dettesToolbar"><div class="table-toolbar-spacer"></div></div>
+    <div class="chart-card">
+      <h2 id="dettesTableTitle">D&eacute;tail des dettes financi&egrave;res <span>M FCFA</span></h2>
+      <div class="table-toolbar" id="dettesToolbar">
+        <div class="view-toggle" id="dettesViewToggle">
+          <button class="vtog active" data-view="nature">Nature</button>
+          <button class="vtog" data-view="banque">Banques</button>
+        </div>
+        <div class="table-toolbar-spacer"></div>
+      </div>
       <div class="fin-table-wrap"><table class="fin-table" id="dettesTable"><thead id="dettesHead"></thead><tbody id="dettesBody"></tbody></table></div>
     </div>
-    <p class="data-footnote">Les ventilations mensuelles sont estim&eacute;es par interpolation &agrave; partir des soldes trimestriels disponibles.</p>
+    <p class="data-footnote">Ventilations mensuelles estim&eacute;es par interpolation &agrave; partir des soldes disponibles.</p>
   </section>
 
   <!-- TAB: FLUX DE TRESORERIE -->

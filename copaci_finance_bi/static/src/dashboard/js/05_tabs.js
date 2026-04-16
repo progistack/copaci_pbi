@@ -416,61 +416,50 @@ function buildSynthHealth(){
 
 // ─── V3 : CASH CONVERSION EBITDA → FCF ───────────────────────
 function buildSynthCashConversion(){
-  // Flow :
-  //   EBITDA
-  //   − Impôts sur le résultat
-  //   − ΔBFR (variations stocks / clients / autres créances / frs / fiscal)
-  //   − Capex (cfs_flux_inv)
-  //   = FCF
-  // Mode + selectedMonth awareness :
-  //   - EBITDA & IS : plAgg (déjà mode-transformé dans PL_DATA)
-  //   - ΔBFR & Capex : cfsAgg (CFS_DATA n'a pas de série N-1, donc LTM fallback → YTD)
-  // Conséquence : en Mensuel, tout porte sur le mois sélectionné (ou le cumul actif).
-  //               En YTD, tout est cumulé Jan→mois. En LTM, EBITDA est rolling 12M
-  //               et le CFS est cumulé YTD (meilleur proxy disponible).
+  // EBITDA − IS − ΔBFR − Capex = FCF
+  // IS=0 en exercice ouvert → on l'omet du bridge et on flag la conversion
   const ebitda=plAgg('ebitda');
-  const is=plAgg('is');// charges IS (négatives dans notre convention)
+  const is=plAgg('is');
   let deltaBfr=0;
   ['cfs_var_stocks','cfs_var_clients','cfs_var_autres_cr','cfs_var_frs','cfs_var_fisc'].forEach(id=>{
     deltaBfr+=cfsAgg(id);
   });
   const capex=cfsAgg('cfs_flux_inv');
-  // FCF = EBITDA + IS + ΔBFR + Capex (signes préservés)
   const fcf=ebitda+is+deltaBfr+capex;
   const conv=ebitda>0?(fcf/ebitda*100):null;
-  // Titre dynamique avec descriptor de période
+  const isBooked=(Math.abs(is)>0.5);
   const titleEl=document.getElementById('synthCashConvTitle');
   if(titleEl){
-    const warn=STATE.mode==='ltm'?' <span class="bud-flag" title="En vue LTM, le CFS retombe sur le cumul YTD (pas de série N-1 disponible)">*</span>':'';
+    const warn=STATE.mode==='ltm'?' <span class="bud-flag" title="En vue LTM, le CFS retombe sur le cumul YTD">*</span>':'';
     titleEl.innerHTML=`Cash conversion EBITDA \u2192 FCF <span>${periodDescriptor()}${warn}</span>`;
   }
-
-  const labels=['EBITDA','Imp\u00f4ts','\u0394 BFR','Capex','FCF'];
-  const vals=[ebitda,is,deltaBfr,capex,fcf];
+  // Build bridge — skip IS bar when not yet booked to avoid confusing zero bar
+  const labels=['EBITDA'];const vals=[ebitda];
+  if(isBooked){labels.push('Imp\u00f4ts');vals.push(is)}
+  labels.push('\u0394 BFR','Capex','FCF');
+  vals.push(deltaBfr,capex,fcf);
   cc('s5',document.getElementById('synthCashConvChart'),{type:'bar',
     data:buildWaterfallData(labels,vals),
     options:(()=>{const base=chartOpts('bar',{legend:false});return{...base,layout:{padding:{top:22}},plugins:{...base.plugins,datalabels:dlWaterfall(vals)},scales:{x:{stacked:true,grid:{display:false},ticks:{color:isDark()?'#94a3b8':'#64748b',font:{size:10}}},y:{stacked:true,grid:{color:isDark()?'rgba(148,163,184,0.15)':'rgba(15,23,42,0.08)'},ticks:{color:isDark()?'#94a3b8':'#64748b',font:{size:10},callback:v=>fmt(v)}}}}})()});
   const kpiEl=document.getElementById('synthCashConvKpi');
   if(kpiEl){
+    const isNote=isBooked?'':'*';
     const convCls=conv==null?'warn':(conv>=80?'good':(conv>=50?'warn':'bad'));
     const fcfCls=fcf>=0?'good':'bad';
     kpiEl.innerHTML=`
       <div class="kpi-mini"><div class="kpi-mini-label">EBITDA</div><div class="kpi-mini-val">${fmt(ebitda)}</div></div>
       <div class="kpi-mini"><div class="kpi-mini-label">FCF</div><div class="kpi-mini-val ${fcfCls}">${fmt(fcf)}</div></div>
-      <div class="kpi-mini"><div class="kpi-mini-label">Conversion</div><div class="kpi-mini-val ${convCls}">${conv==null?'n/d':conv.toFixed(0)+'%'}</div></div>
+      <div class="kpi-mini"><div class="kpi-mini-label">Conversion${isNote}</div><div class="kpi-mini-val ${convCls}">${conv==null?'n/d':conv.toFixed(0)+'%'}</div></div>
+      ${isNote?'<div class="kpi-mini"><div class="kpi-mini-label" style="font-style:italic">* IS non comptabilis\u00e9</div></div>':''}
     `;
   }
 }
 
 // ─── V3 : PONT DE MARGE EBITDA (N-1 → N) ─────────────────────
 function buildSynthMarginBridge(){
-  // Decompose the EBITDA delta from N-1 to N into:
-  //   1. Volume effect (pure revenue growth at constant N-1 margin)
-  //   2. Price / product mix on gross margin (% marge brute delta × CA N)
-  //   3. Direct costs delta (scaled to % CA)
-  //   4. G&A delta (scaled to % CA)
-  //   5. Other
-  // All values in M FCFA. Starting bar = EBITDA N-1, ending bar = EBITDA N
+  // Simple absolute-delta bridge — clearer than volume/mix decomposition:
+  //   EBITDA N-1 + ΔMarge brute + ΔCoûts directs + ΔG&A + ΔAutres = EBITDA N
+  // Each bar shows how much that P&L line changed vs N-1 (in M FCFA).
   // Seasonality guard : the bridge decomposes \u0394EBITDA from N-1 to N, so if
   // N-1 is closed-lumped (exercice cl\u00f4tur\u00e9 sur 1-2 mois) or if the N period is
   // not alignable to N-1, the effets volume/marge become meaningless. Bail out
@@ -501,37 +490,20 @@ function buildSynthMarginBridge(){
     if(kpiEl)kpiEl.innerHTML='';
     return;
   }
-  // N-1 aggregates use n1AggMatched so the decomposition compares matching
-  // month ranges (prevents the Jan\u2192Apr 2026 vs 12 mois 2025 mismatch).
+  // N-1 uses n1AggMatched for period-aligned comparison (Jan-Apr N vs Jan-Apr N-1)
   const ca=plAgg('ca_net'),caN1=n1AggMatched('ca_net');
   const mb=plAgg('marge_brute'),mbN1=n1AggMatched('marge_brute');
   const cd=plAgg('couts_directs'),cdN1=n1AggMatched('couts_directs');
   const ga=plAgg('ga'),gaN1=n1AggMatched('ga');
   const ebitda=plAgg('ebitda'),ebitdaN1=n1AggMatched('ebitda');
-  // Effets
-  // Effet volume : \u0394CA * (marge EBITDA N-1 en %)
-  // But EBITDA = MB + CD + GA, et on veut ventiler la variation
-  const margeMbN1=caN1?mbN1/caN1:0;
-  const margeCdN1=caN1?cdN1/caN1:0;
-  const margeGaN1=caN1?gaN1/caN1:0;
-  const dCa=ca-caN1;
-  // Effet volume : impact de la variation CA \u00e0 marges N-1 constantes
-  const effVol=dCa*(margeMbN1+margeCdN1+margeGaN1);
-  // Effet marge brute : (marge_brute_N / CA_N - marge_brute_N-1 / CA_N-1) * CA_N
-  const effMb=(ca?mb/ca:0)-margeMbN1;
-  const effMbVal=effMb*ca;
-  // Effet co\u00fbts directs : idem
-  const effCd=(ca?cd/ca:0)-margeCdN1;
-  const effCdVal=effCd*ca;
-  // Effet G&A
-  const effGa=(ca?ga/ca:0)-margeGaN1;
-  const effGaVal=effGa*ca;
-  // Résidu : tout ce qui ne rentre pas dans ces 4 effets (reprises, autres prod, etc.)
-  const totalExplained=effVol+effMbVal+effCdVal+effGaVal;
-  const residual=(ebitda-ebitdaN1)-totalExplained;
+  // Absolute deltas — what actually changed, line by line
+  const dMb=mb-mbN1;
+  const dCd=cd-cdN1;
+  const dGa=ga-gaN1;
+  const dAutres=(ebitda-ebitdaN1)-(dMb+dCd+dGa);
 
-  const labels=['EBITDA N-1','Volume','Marge brute','Co\u00fbts dir.','G&A','Autres','EBITDA N'];
-  const vals=[ebitdaN1,effVol,effMbVal,effCdVal,effGaVal,residual,ebitda];
+  const labels=['EBITDA N-1','\u0394 Marge brute','\u0394 Co\u00fbts dir.','\u0394 G&A','\u0394 Autres','EBITDA N'];
+  const vals=[ebitdaN1,dMb,dCd,dGa,dAutres,ebitda];
   cc('s6',document.getElementById('synthMarginBridgeChart'),{type:'bar',
     data:buildWaterfallData(labels,vals),
     options:(()=>{const base=chartOpts('bar',{legend:false});return{...base,layout:{padding:{top:22}},plugins:{...base.plugins,datalabels:dlWaterfall(vals)},scales:{x:{stacked:true,grid:{display:false},ticks:{color:isDark()?'#94a3b8':'#64748b',font:{size:9.5}}},y:{stacked:true,grid:{color:isDark()?'rgba(148,163,184,0.15)':'rgba(15,23,42,0.08)'},ticks:{color:isDark()?'#94a3b8':'#64748b',font:{size:10},callback:v=>fmt(v)}}}}})()});
@@ -553,9 +525,9 @@ function buildSynthMarginBridge(){
 }
 
 // ─── COMPANY CONTRIBUTION (multi-societe only) ──────────────
-// Two stacked bar charts showing each company's contribution to CA and EBITDA.
-// Only visible when the user has access to 2+ companies.
-const CONTRIB_COLORS=['#0d9488','#6366f1','#f59e0b','#ec4899','#8b5cf6'];
+// Two doughnuts showing each company's share of CA and EBITDA.
+// Only visible for users with access to 2+ companies.
+// Uses COL palette from 00_config.js — teal(0), blue(1), green(2), amber(3)...
 function buildSynthCompanyContrib(){
   const row=document.getElementById('synthContribRow');
   if(!row)return;
@@ -563,72 +535,70 @@ function buildSynthCompanyContrib(){
   if(!contrib){row.style.display='none';return}
   row.style.display='';
   const companies=STATE._companies||[];
-  const labels=activeLabels();
   const lastMo=CACHE.lastMonth[STATE.year];
   const lastIdx=(lastMo!=null&&lastMo>=0)?lastMo:11;
-  // Period label
-  const modeLabel={mensuel:'Mensuel',ytd:'YTD',ltm:'LTM'}[STATE.mode]||'';
-  const periodLabel=modeLabel+' '+MO[lastIdx]+' '+STATE.year;
+  const mSel=STATE.selectedMonth;
+  const isMonth=mSel!=='all';
+  let periodLabel;
+  if(isMonth){periodLabel=MO[+mSel]+' '+STATE.year}
+  else if(STATE.mode==='ytd'){periodLabel='YTD '+MO[lastIdx]+' '+STATE.year}
+  else if(STATE.mode==='ltm'){periodLabel='LTM '+MO[lastIdx]+' '+STATE.year}
+  else{periodLabel=(CACHE.yearStatus[STATE.year]==='open'?'YTD '+MO[lastIdx]:'')+' '+STATE.year}
   const caTitle=document.getElementById('synthContribCaTitle');
-  if(caTitle)caTitle.innerHTML=`Contribution au CA par soci\u00e9t\u00e9 <span>${esc(periodLabel)}</span>`;
+  if(caTitle)caTitle.innerHTML=`Contribution au CA <span>${esc(periodLabel)}</span>`;
   const ebTitle=document.getElementById('synthContribEbitdaTitle');
-  if(ebTitle)ebTitle.innerHTML=`Contribution \u00e0 l'EBITDA par soci\u00e9t\u00e9 <span>${esc(periodLabel)}</span>`;
+  if(ebTitle)ebTitle.innerHTML=`Contribution \u00e0 l'EBITDA <span>${esc(periodLabel)}</span>`;
+  const dk=isDark();
 
-  // Build datasets — one per company, stacked
-  function buildChart(canvasId,chartKey,field){
-    const datasets=[];
+  function buildDoughnut(canvasId,chartKey,field){
+    const vals=[],labels=[],colors=[];
     companies.forEach((c,ci)=>{
-      const d=contrib[c.id];
-      if(!d)return;
-      const raw=d[field];// m[12] array
-      const sliced=activeRange(raw);
-      datasets.push({
-        label:c.name,
-        data:sliced,
-        backgroundColor:toRgba(CONTRIB_COLORS[ci%CONTRIB_COLORS.length],0.75),
-        borderRadius:3,
-      });
+      const d=contrib[c.id];if(!d)return;
+      vals.push(Math.abs(d[field]));
+      labels.push(c.name);
+      colors.push(COL[ci%COL.length]);
     });
-    const opts=chartOpts('bar',{legend:false});
-    cc(chartKey,document.getElementById(canvasId),{type:'bar',
-      data:{labels,datasets},
-      options:{...opts,layout:{padding:{top:18}},
-        scales:{
-          x:{stacked:true,grid:{display:false},ticks:{color:isDark()?'#94a3b8':'#64748b',font:{size:10}}},
-          y:{stacked:true,grid:{color:isDark()?'rgba(148,163,184,0.15)':'rgba(15,23,42,0.08)'},ticks:{color:isDark()?'#94a3b8':'#64748b',font:{size:10},callback:v=>fmt(v)}}
-        },
-        plugins:{...opts.plugins,
-          datalabels:{display:false},
-          tooltip:{callbacks:{label:function(ctx){return ctx.dataset.label+' : '+fmt(ctx.parsed.y)+' M'}}}
+    const total=vals.reduce((a,b)=>a+b,0);
+    const bgCol=dk?'#0c1222':'#ffffff';
+    cc(chartKey,document.getElementById(canvasId),{type:'doughnut',
+      data:{labels,datasets:[{data:vals,backgroundColor:colors,
+        borderColor:bgCol,borderWidth:3,hoverOffset:6,borderRadius:2}]},
+      options:{responsive:true,maintainAspectRatio:false,cutout:'74%',
+        layout:{padding:{top:4,bottom:4}},
+        plugins:{
+          legend:{display:false},
+          biCenterText:{text:fmt(total),sub:'M FCFA',textSize:20,subSize:11},
+          tooltip:{backgroundColor:dk?'rgba(15,23,42,.92)':'rgba(255,255,255,.95)',
+            titleColor:dk?'#e2e8f0':'#0f172a',bodyColor:dk?'#94a3b8':'#475569',
+            borderColor:dk?'rgba(255,255,255,.08)':'rgba(0,0,0,.08)',borderWidth:1,
+            cornerRadius:8,padding:10,
+            callbacks:{label:function(ctx){
+              const v=ctx.parsed;const pct=total?(v/total*100).toFixed(1):'0';
+              return ' '+ctx.label+' : '+fmt(v)+' M ('+pct.replace('.',',')+' %)';
+            }}}
         }
       }
     });
-    mountSeriesFilter(chartKey,canvasId);
   }
-  buildChart('synthContribCaChart','sc1','caM');
-  buildChart('synthContribEbitdaChart','sc2','ebitdaM');
+  buildDoughnut('synthContribCaChart','sc1','ca');
+  buildDoughnut('synthContribEbitdaChart','sc2','ebitda');
 
-  // KPI summaries under each chart
-  const totalCa=companies.reduce((s,c)=>{const d=contrib[c.id];return s+(d?d.ca:0)},0);
-  const totalEbitda=companies.reduce((s,c)=>{const d=contrib[c.id];return s+(d?d.ebitda:0)},0);
-  const caKpi=document.getElementById('synthContribCaKpi');
-  if(caKpi){
-    caKpi.innerHTML=companies.map((c,ci)=>{
+  // Legend with proportional bars — Stripe/Linear style
+  function renderLegend(elId,field){
+    const el=document.getElementById(elId);if(!el)return;
+    const vals=companies.map(c=>{const d=contrib[c.id];return d?Math.abs(d[field]):0});
+    const total=vals.reduce((a,b)=>a+b,0);
+    el.innerHTML=companies.map((c,ci)=>{
       const d=contrib[c.id];if(!d)return'';
-      const pct=totalCa?Math.abs(d.ca/totalCa*100):0;
-      const dot=`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${CONTRIB_COLORS[ci%CONTRIB_COLORS.length]};margin-right:6px"></span>`;
-      return `<div class="kpi-mini">${dot}<div class="kpi-mini-label">${esc(c.name)}</div><div class="kpi-mini-val">${fmt(d.ca)} M &middot; ${pct.toFixed(1).replace('.',',')}%</div></div>`;
+      const v=d[field];const absV=Math.abs(v);
+      const pct=total?(absV/total*100):0;
+      const pctStr=pct.toFixed(1).replace('.',',');
+      const col=COL[ci%COL.length];
+      return `<div class="contrib-item"><div class="contrib-header"><span class="contrib-dot" style="background:${col}"></span><span class="contrib-name">${esc(c.name)}</span><span class="contrib-pct">${pctStr}%</span></div><div class="contrib-bar"><div class="contrib-fill" style="width:${pct.toFixed(1)}%;background:${col}"></div></div><div class="contrib-val">${fmt(absV)} M FCFA</div></div>`;
     }).join('');
   }
-  const ebKpi=document.getElementById('synthContribEbitdaKpi');
-  if(ebKpi){
-    ebKpi.innerHTML=companies.map((c,ci)=>{
-      const d=contrib[c.id];if(!d)return'';
-      const pct=totalEbitda?Math.abs(d.ebitda/totalEbitda*100):0;
-      const dot=`<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${CONTRIB_COLORS[ci%CONTRIB_COLORS.length]};margin-right:6px"></span>`;
-      return `<div class="kpi-mini">${dot}<div class="kpi-mini-label">${esc(c.name)}</div><div class="kpi-mini-val">${fmt(d.ebitda)} M &middot; ${pct.toFixed(1).replace('.',',')}%</div></div>`;
-    }).join('');
-  }
+  renderLegend('synthContribCaKpi','ca');
+  renderLegend('synthContribEbitdaKpi','ebitda');
 }
 
 // ─── V3 : AUTO-INSIGHTS (rule engine) ────────────────────────
@@ -1033,174 +1003,294 @@ function buildKpis(){
 }
 
 // ─── TAB 6: DETTES ───────────────────────────────────────────
+// Bank name extraction from SYSCOHADA account labels
+const BANK_MAP=[
+  {pattern:/SGCI|SGBCI/i,name:'SGBCI'},
+  {pattern:/BBG|BRIDGE/i,name:'Bridge Bank'},
+  {pattern:/BOA|BOACI|BANK OF AFRICA/i,name:'BOA'},
+  {pattern:/ECOBANK/i,name:'Ecobank'},
+  {pattern:/BGFI/i,name:'BGFI'},
+  {pattern:/NSIA/i,name:'NSIA'},
+  {pattern:/BICICI/i,name:'BICICI'},
+  {pattern:/WAVE/i,name:'Wave'},
+];
+function extractBank(name){
+  for(const b of BANK_MAP){if(b.pattern.test(name))return b.name}
+  if(/LOYER CB|CR.DIT.BAIL/i.test(name))return 'Cr\u00e9dit-bail';
+  if(/CAISSE|VIREMENT/i.test(name))return 'Caisse';
+  return 'Autre';
+}
+// Palette for banks — uses COL theme colors
+const BANK_COL={'SGBCI':COL[0],'Bridge Bank':COL[1],'BOA':COL[2],'Ecobank':COL[3],'BGFI':COL[7],'NSIA':COL[6],'BICICI':COL[4],'Cr\u00e9dit-bail':COL[5],'Wave':COL[8],'Caisse':COL[9],'Autre':'#94a3b8'};
+// Nature colors
+const NAT_COL={'emprunt_mt':COL[0],'credit_bail':COL[7],'credit_ct':COL[1]};
+const NAT_LABEL={'emprunt_mt':'Emprunt MT','credit_bail':'Cr\u00e9dit-bail','credit_ct':'Cr\u00e9dits CT'};
+
 function buildDettes(){
-  // Live rebuild from BILAN_DATA.m[] + CACHE.rawPL for EBITDA LTM.
-  // Falls back gracefully when the bilan is a flat snapshot (pickBalFromLine
-  // then serves line.val; monthly tables show the single closing value).
-  const year = STATE.year;
-  const bilan = CACHE.bilan[year] || BILAN_DATA;
-  const lm = CACHE.lastMonth[year];
-  const lastIdx = (lm!=null && lm>=0) ? lm : 11;
+  const year=STATE.year;
+  const bilan=CACHE.bilan[year]||BILAN_DATA;
+  const lm=CACHE.lastMonth[year];
+  const lastIdx=(lm!=null&&lm>=0)?lm:11;
+  const bLine=(id)=>balLine(bilan,id);
+  const pick=(id)=>pickBalFromLine(bLine(id),year,bilanMonthIdx(year));
+  const ser=(id)=>{const line=bLine(id);if(!line)return new Array(12).fill(null);if(Array.isArray(line.m)&&line.m.length===12)return line.m.slice();const flat=new Array(12).fill(null);flat[lastIdx]=line.val||0;return flat};
+  const dk=isDark();
 
-  const bLine  = (id) => balLine(bilan, id);
-  const pick   = (id) => pickBalFromLine(bLine(id), year, bilanMonthIdx(year));
-  const series = (id) => {
-    const line = bLine(id);
-    if(!line) return new Array(12).fill(null);
-    if(Array.isArray(line.m) && line.m.length===12) return line.m.slice();
-    // Legacy flat snapshot : expose only val at lastIdx, rest null
-    const flat = new Array(12).fill(null);
-    flat[lastIdx] = line.val||0;
-    return flat;
-  };
-
-  // KPI cards — value at selected month (respects month filter)
-  const empruntMt   = pick('emprunt_mt');
-  const creditBail  = pick('credit_bail');
-  const creditCt    = pick('credit_ct');
-  const provisions  = pick('provisions');
-  const dettesFinTot= pick('dettes_fin_b');
-  const treso       = pick('tresorerie_a');
-  const detteNette  = dettesFinTot - treso;
-  // Levier live \u2014 m\u00eame formule que la jauge Sant\u00e9 financi\u00e8re et le KPI Synth\u00e8se
-  // (annualized EBITDA). \u00c9vite les incoh\u00e9rences avec RATIOS.levier.val stale.
-  const ebitdaAnnLive=annualizedAgg('ebitda');
-  const leverageLive=(ebitdaAnnLive>0)?+(detteNette/ebitdaAnnLive).toFixed(1):null;
-  const leverageStr = (leverageLive!=null&&isFinite(leverageLive))
-                      ? (leverageLive.toFixed(1).replace('.',',')+'x EBITDA')
-                      : 'n/a';
-
-  const kpis=[
-    {label:'Emprunt MT',  val:fmt(empruntMt),  sub:'M FCFA'},
-    {label:'Cr\u00e9dit-bail', val:fmt(creditBail), sub:'M FCFA'},
-    {label:'Cr\u00e9dits CT',  val:fmt(creditCt),   sub:'M FCFA'},
-    {label:'Dette nette', val:fmt(detteNette), sub:'M FCFA \u00b7 '+leverageStr},
-  ];
-  let html='';kpis.forEach(k=>{html+=`<div class="kpi-card"><div class="kpi-label">${esc(k.label)}</div><div class="kpi-value">${k.val}</div><div class="kpi-sub">${esc(k.sub)}</div></div>`});
-  document.getElementById('dettesKpis').innerHTML=html;
-
-  // ─── Chart 1 : Composition (doughnut) ────────────────────────
-  const totalFin = empruntMt + creditBail + creditCt + provisions;
-  cc('d1',document.getElementById('detteTypeChart'),{type:'doughnut',
-    data:{labels:['Emprunt MT','Cr\u00e9dit-bail','Cr\u00e9dits CT','Provisions'],
-      datasets:[{data:[empruntMt,creditBail,creditCt,provisions],backgroundColor:['#3b82f6','#8b5cf6','#f97316','#94a3b8'],borderWidth:0,hoverOffset:8}]},
-    options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{position:'right',labels:{color:isDark()?'#94a3b8':'#475569',font:{size:10},boxWidth:10,padding:8}},biCenterText:{text:fmt(totalFin),sub:'M FCFA'}}}});
-
-  // ─── Series mensuelles communes ──────────────────────────────
-  const dLabels    = activeLabels();
-  const dettesFinM = series('dettes_fin_b');
-  const tresoM     = series('tresorerie_a');
-  const empruntM   = series('emprunt_mt');
-  const cbailM     = series('credit_bail');
-  const cctM       = series('credit_ct');
-  const provM      = series('provisions');
-  const detteNetteM = new Array(12).fill(null);
-  for(let i=0;i<12;i++){
-    if(dettesFinM[i]==null) continue;
-    const t = (tresoM[i]!=null) ? tresoM[i] : 0;
-    detteNetteM[i] = +(dettesFinM[i] - t).toFixed(1);
+  // ── Build bank-level data from individual accounts ──
+  function buildBankData(){
+    const banks={};
+    ['emprunt_mt','credit_bail','credit_ct'].forEach(natId=>{
+      const line=bLine(natId);
+      if(!line||!line.accounts)return;
+      line.accounts.forEach(acct=>{
+        const bank=extractBank(acct.name);
+        if(!banks[bank])banks[bank]={name:bank,m:new Array(12).fill(0),total:0,byNature:{},accounts:[]};
+        if(!banks[bank].byNature[natId])banks[bank].byNature[natId]={m:new Array(12).fill(0),total:0,accounts:[]};
+        banks[bank].byNature[natId].accounts.push(acct);
+        banks[bank].accounts.push({...acct,nature:natId});
+        for(let i=0;i<12;i++){const v=acct.m?acct.m[i]:null;if(v!=null){banks[bank].m[i]+=v;banks[bank].byNature[natId].m[i]+=v}}
+        const snap=acct.m?acct.m[lastIdx]||0:0;
+        banks[bank].total+=snap;
+        banks[bank].byNature[natId].total+=snap;
+      });
+    });
+    return banks;
   }
-  // Trésorerie inversée (négative) pour empilage visuel sous la base 0
-  const tresoNegM = tresoM.map(v => v==null ? null : -v);
+  const bankData=buildBankData();
+  const bankList=Object.values(bankData).sort((a,b)=>Math.abs(b.total)-Math.abs(a.total));
+  const selBank=STATE._selectedBank||null;
 
-  // ─── Chart 2 : Évolution dette empilée (Dette + Cash + ligne nette) ──
-  // Datalabels : on affiche uniquement la ligne "Dette nette" (dataset idx 2)
-  // pour ne pas surcharger les barres empilées de chaque mois.
+  // ── Filtered series (respects bank selection) ──
+  function filteredNatureSeries(natId){
+    if(!selBank){return ser(natId)}
+    const bd=bankData[selBank];
+    if(!bd||!bd.byNature[natId])return new Array(12).fill(0);
+    return bd.byNature[natId].m.slice();
+  }
+  const empruntM=filteredNatureSeries('emprunt_mt');
+  const cbailM=filteredNatureSeries('credit_bail');
+  const cctM=filteredNatureSeries('credit_ct');
+  // Total debt = sum of 3 natures (no provisions)
+  const dettesFinM=new Array(12).fill(null);
+  for(let i=0;i<12;i++){
+    const mt=empruntM[i]||0,cb=cbailM[i]||0,ct=cctM[i]||0;
+    if(ser('emprunt_mt')[i]!=null)dettesFinM[i]=+(mt+cb+ct).toFixed(1);
+  }
+  const tresoM=ser('tresorerie_a');
+  const detteNetteM=new Array(12).fill(null);
+  for(let i=0;i<12;i++){if(dettesFinM[i]==null)continue;detteNetteM[i]=+(dettesFinM[i]-(tresoM[i]||0)).toFixed(1)}
+  const tresoNegM=tresoM.map(v=>v==null?null:-v);
+
+  // ── KPI cards (no provisions) ──
+  const miSnap=bilanMonthIdx(year);
+  const empruntSnap=selBank?(bankData[selBank]?.byNature.emprunt_mt?.m[miSnap]||0):pick('emprunt_mt');
+  const cbailSnap=selBank?(bankData[selBank]?.byNature.credit_bail?.m[miSnap]||0):pick('credit_bail');
+  const cctSnap=selBank?(bankData[selBank]?.byNature.credit_ct?.m[miSnap]||0):pick('credit_ct');
+  const detteTot=empruntSnap+cbailSnap+cctSnap;
+  const tresoSnap=pick('tresorerie_a');
+  const detteNette=detteTot-tresoSnap;
+  const ebitdaAnn=annualizedAgg('ebitda');
+  const leverage=(ebitdaAnn>0)?+(detteNette/ebitdaAnn).toFixed(1):null;
+  const levStr=(leverage!=null&&isFinite(leverage))?(leverage.toFixed(1).replace('.',',')+'\u00d7'):'\u2013';
+  const bankLabel=selBank?(' \u00b7 '+selBank):'';
+  const kpis=[
+    {label:'Emprunt MT',val:fmt(empruntSnap),sub:'M FCFA'+bankLabel},
+    {label:'Cr\u00e9dit-bail',val:fmt(cbailSnap),sub:'M FCFA'+bankLabel},
+    {label:'Cr\u00e9dits CT',val:fmt(cctSnap),sub:'M FCFA'+bankLabel},
+    {label:'Dette nette',val:fmt(detteNette),sub:levStr+' EBITDA'},
+  ];
+  let khtml='';kpis.forEach(k=>{khtml+=`<div class="kpi-card"><div class="kpi-label">${esc(k.label)}</div><div class="kpi-value">${k.val}</div><div class="kpi-sub">${esc(k.sub)}</div></div>`});
+  document.getElementById('dettesKpis').innerHTML=khtml;
+
+  // ── Bank filter pills ──
+  const fw=document.getElementById('bankFilterWrap');
+  if(fw&&bankList.length>1){
+    fw.style.display='';
+    let fhtml='<span class="cw-label">Banque</span>';
+    fhtml+=`<button class="company-pill${!selBank?' all-active':''}" data-bank="all">Toutes</button>`;
+    bankList.forEach(b=>{
+      const active=selBank===b.name?' active':'';
+      fhtml+=`<button class="company-pill${active}" data-bank="${esc(b.name)}">${esc(b.name)}</button>`;
+    });
+    fw.innerHTML=fhtml;
+    fw.querySelectorAll('.company-pill').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        const bk=btn.dataset.bank;
+        STATE._selectedBank=(bk==='all')?null:bk;
+        buildDettes();
+      });
+    });
+  }
+
+  const dLabels=activeLabels();
+
+  // ── Chart 1: Exposition bancaire (horizontal bar) ──
+  const bankLabels=[],bankVals=[],bankColors=[];
+  bankList.forEach(b=>{
+    if(Math.abs(b.total)<0.5)return;
+    bankLabels.push(b.name);
+    bankVals.push(Math.abs(b.total));
+    bankColors.push(BANK_COL[b.name]||'#94a3b8');
+  });
+  cc('d1',document.getElementById('detteBankChart'),{type:'bar',
+    data:{labels:bankLabels,datasets:[{data:bankVals,backgroundColor:bankColors.map((c,i)=>selBank&&bankLabels[i]!==selBank?toRgba(c,0.25):toRgba(c,0.8)),borderRadius:4,borderWidth:0,barPercentage:.7}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},datalabels:{display:true,anchor:'end',align:'end',offset:4,clip:false,color:dk?'#e2e8f0':'#334155',font:{size:10,weight:'600'},formatter:v=>fmt(v)}},
+      scales:{x:{grid:{color:dk?'rgba(148,163,184,0.12)':'rgba(15,23,42,0.06)'},ticks:{color:dk?'#94a3b8':'#64748b',font:{size:9},callback:v=>fmt(v)}},y:{grid:{display:false},ticks:{color:dk?'#e2e8f0':'#334155',font:{size:10,weight:'500'}}}},
+      onClick(evt,elems){if(!elems.length)return;const idx=elems[0].index;const clicked=bankLabels[idx];STATE._selectedBank=(STATE._selectedBank===clicked)?null:clicked;buildDettes()}
+    }
+  });
+
+  // ── Chart 2: Évolution (stacked + net debt line) ──
+  const lineCol=dk?'#e2e8f0':'#0f172a';
   cc('d2',document.getElementById('detteStackedChart'),{type:'bar',
     data:{labels:dLabels,datasets:[
-      {label:'Dette financi\u00e8re brute',data:activeRange(dettesFinM),backgroundColor:toRgba('#ef4444',0.55),borderRadius:4,stack:'cash',order:3},
-      {label:'Tr\u00e9sorerie',data:activeRange(tresoNegM),backgroundColor:toRgba('#10b981',0.55),borderRadius:4,stack:'cash',order:3},
-      {label:'Dette nette',data:activeRange(detteNetteM),type:'line',borderColor:'#0f172a',borderWidth:2.5,backgroundColor:toRgba('#0f172a',0.08),tension:.35,pointRadius:3,pointBackgroundColor:'#0f172a',order:1,spanGaps:true}
+      {label:'Dette brute',data:activeRange(dettesFinM),backgroundColor:toRgba(COL[4],0.5),borderRadius:4,stack:'s',order:3},
+      {label:'Tr\u00e9sorerie',data:activeRange(tresoNegM),backgroundColor:toRgba(COL[2],0.5),borderRadius:4,stack:'s',order:3},
+      {label:'Dette nette',data:activeRange(detteNetteM),type:'line',borderColor:lineCol,borderWidth:2.5,backgroundColor:toRgba(lineCol,0.06),tension:.35,pointRadius:3,pointBackgroundColor:lineCol,order:1,spanGaps:true}
     ]},
-    options:(()=>{const base=chartOpts('bar',{legend:false});return{...base,layout:{padding:{top:18}},plugins:{...base.plugins,datalabels:{display:(ctx)=>ctx.datasetIndex===2&&ctx.dataset.data[ctx.dataIndex]!=null,anchor:'end',align:'top',offset:4,clip:false,color:isDark()?'#f0f0f5':'#0f172a',font:{size:9,weight:'700'},formatter:(v)=>v==null?'':fmt(v)}},scales:{x:{stacked:true,grid:{display:false},ticks:{color:isDark()?'#94a3b8':'#64748b',font:{size:10}}},y:{stacked:true,grid:{color:isDark()?'rgba(148,163,184,0.15)':'rgba(15,23,42,0.08)'},ticks:{color:isDark()?'#94a3b8':'#64748b',font:{size:10},callback:v=>fmt(v)}}}}})()});
+    options:(()=>{const base=chartOpts('bar',{legend:false});return{...base,layout:{padding:{top:18}},plugins:{...base.plugins,datalabels:{display:(ctx)=>ctx.datasetIndex===2&&ctx.dataset.data[ctx.dataIndex]!=null,anchor:'end',align:'top',offset:4,clip:false,color:lineCol,font:{size:9,weight:'700'},formatter:v=>v==null?'':fmt(v)}},scales:{x:{stacked:true,grid:{display:false},ticks:{color:dk?'#94a3b8':'#64748b',font:{size:10}}},y:{stacked:true,grid:{color:dk?'rgba(148,163,184,0.12)':'rgba(15,23,42,0.06)'},ticks:{color:dk?'#94a3b8':'#64748b',font:{size:10},callback:v=>fmt(v)}}}}})()});
   mountSeriesFilter('d2','detteStackedChart');
 
-  // ─── Chart 3 : Dette par nature (4 datasets stackés) ─────────
-  // Datalabels : segment center quand la part dépasse 6 % du max global.
+  // ── Chart 3: Par nature (stacked, no provisions) ──
   cc('d3',document.getElementById('detteByNatureChart'),{type:'bar',
     data:{labels:dLabels,datasets:[
-      {label:'Emprunt MT',  data:activeRange(empruntM),backgroundColor:toRgba('#3b82f6',0.7),borderRadius:3,stack:'nature'},
-      {label:'Cr\u00e9dit-bail',data:activeRange(cbailM),  backgroundColor:toRgba('#8b5cf6',0.7),borderRadius:3,stack:'nature'},
-      {label:'Cr\u00e9dits CT', data:activeRange(cctM),    backgroundColor:toRgba('#f97316',0.7),borderRadius:3,stack:'nature'},
-      {label:'Provisions',  data:activeRange(provM),   backgroundColor:toRgba('#94a3b8',0.7),borderRadius:3,stack:'nature'}
+      {label:'Emprunt MT',data:activeRange(empruntM),backgroundColor:toRgba(NAT_COL.emprunt_mt,0.7),borderRadius:3,stack:'n'},
+      {label:'Cr\u00e9dit-bail',data:activeRange(cbailM),backgroundColor:toRgba(NAT_COL.credit_bail,0.7),borderRadius:3,stack:'n'},
+      {label:'Cr\u00e9dits CT',data:activeRange(cctM),backgroundColor:toRgba(NAT_COL.credit_ct,0.7),borderRadius:3,stack:'n'}
     ]},
-    options:(()=>{const base=chartOpts('bar',{legend:false});return{...base,plugins:{...base.plugins,datalabels:dlStacked({fontSize:9})},scales:{x:{stacked:true,grid:{display:false},ticks:{color:isDark()?'#94a3b8':'#64748b',font:{size:10}}},y:{stacked:true,grid:{color:isDark()?'rgba(148,163,184,0.15)':'rgba(15,23,42,0.08)'},ticks:{color:isDark()?'#94a3b8':'#64748b',font:{size:10},callback:v=>fmt(v)}}}}})()});
+    options:(()=>{const base=chartOpts('bar',{legend:false});return{...base,plugins:{...base.plugins,datalabels:dlStacked({fontSize:9})},scales:{x:{stacked:true,grid:{display:false},ticks:{color:dk?'#94a3b8':'#64748b',font:{size:10}}},y:{stacked:true,grid:{color:dk?'rgba(148,163,184,0.12)':'rgba(15,23,42,0.06)'},ticks:{color:dk?'#94a3b8':'#64748b',font:{size:10},callback:v=>fmt(v)}}}}})()});
   mountSeriesFilter('d3','detteByNatureChart');
 
-  // ─── Tableau drill-down ──────────────────────────────────────
-  // Header dynamique
-  const headHtml = '<tr><th style="text-align:left">Libell\u00e9</th>'+dLabels.map((m,mi)=>`<th data-col="${mi}">${m}</th>`).join('')+'<th style="text-align:right">Dernier</th></tr>';
-  const headEl = document.getElementById('dettesHead');
-  if(headEl) headEl.innerHTML = headHtml;
+  // ── Detail table with Nature/Banque toggle ──
+  const headHtml='<tr><th style="text-align:left">Libell\u00e9</th>'+dLabels.map((m,mi)=>`<th data-col="${mi}">${m}</th>`).join('')+'<th style="text-align:right">Dernier</th></tr>';
+  const headEl=document.getElementById('dettesHead');
+  if(headEl)headEl.innerHTML=headHtml;
 
-  // Structure hi\u00e9rarchique : 3 sections (Dette financi\u00e8re, Tr\u00e9sorerie,
-  // Dette nette). Chaque section est une ligne L0 (total) avec ses sous-lignes
-  // L1 cliquables/repliables. La ligne "Dette nette" est calcul\u00e9e (pas de
-  // sous-niveau). Compatible avec buildRowDepthMap + applyTableExpandMode.
-  const items = [
-    // Section dette financi\u00e8re
-    {id:'dettes_fin_b', label:'Dettes financi\u00e8res',           level:0, type:'total',    expandable:true,  m:dettesFinM, bold:true},
-    {id:'emprunt_mt',   label:'Emprunt bancaire MT',               level:1, parent:'dettes_fin_b', m:empruntM},
-    {id:'credit_bail',  label:'Dettes de cr\u00e9dit-bail',        level:1, parent:'dettes_fin_b', m:cbailM},
-    {id:'credit_ct',    label:'Cr\u00e9dits bancaires CT',         level:1, parent:'dettes_fin_b', m:cctM},
-    {id:'provisions',   label:'Provisions R&C',                    level:1, parent:'dettes_fin_b', m:provM},
-    // Section tr\u00e9sorerie
-    {id:'tresorerie_a', label:'Tr\u00e9sorerie',                   level:0, type:'total',    expandable:true,  m:tresoM, bold:true},
-    {id:'effets_enc',   label:'Effets \u00e0 encaisser',           level:1, parent:'tresorerie_a', m:series('effets_enc')},
-    {id:'banque',       label:'Banque',                            level:1, parent:'tresorerie_a', m:series('banque')},
-    {id:'caisse',       label:'Caisse',                            level:1, parent:'tresorerie_a', m:series('caisse')},
-    // Dette nette = calcul
-    {id:'dette_nette',  label:'Dette nette',                       level:0, type:'total',    m:detteNetteM, bold:true, isNet:true}
-  ];
-  const depthMap = buildRowDepthMap(items);
-
-  let tbody='';
-  items.forEach(it => {
-    const depth = depthMap.get(it.id) || 0;
-    const isHidden = depth >= 1; // start in 'reduit' mode (only L0 visible)
-    const slice = activeRange(it.m);
-    const last = slice[slice.length-1];
-    const cls = ['row-depth-'+depth];
-    if(it.bold || it.type==='total') cls.push('row-l0');
-    if(it.expandable) cls.push('row-expandable');
-    if(isHidden) cls.push('row-hidden');
-    tbody += `<tr class="${cls.join(' ')}" data-id="${esc(it.id)}" data-parent="${esc(it.parent||'')}" data-depth="${depth}">`;
-    tbody += `<td>`;
-    if(it.expandable) tbody += `<span class="row-expand-icon" data-target="${esc(it.id)}">&#9654;</span>`;
-    tbody += `${esc(it.label)}</td>`;
-    slice.forEach((v,mi) => {
-      const display = (v==null) ? 'n/d' : fmt(v);
-      const cellCls = (v!=null && v<0) ? 'neg' : '';
-      const weight = (it.type==='total') ? '700' : '500';
-      tbody += `<td class="${cellCls}" data-col="${mi}" style="text-align:right;font-weight:${weight}">${display}</td>`;
+  // View toggle wiring
+  const view=STATE._dettesView||'nature';
+  const toggle=document.getElementById('dettesViewToggle');
+  if(toggle){
+    toggle.querySelectorAll('.vtog').forEach(b=>{
+      b.classList.toggle('active',b.dataset.view===view);
+      b.onclick=()=>{STATE._dettesView=b.dataset.view;buildDettes()};
     });
-    const lastDisplay = (last==null) ? 'n/d' : fmt(last);
-    const lastWeight = (it.type==='total') ? '700' : '600';
-    tbody += `<td style="text-align:right;font-weight:${lastWeight}">${lastDisplay}</td></tr>`;
-  });
-  const bodyEl = document.getElementById('dettesBody');
-  bodyEl.innerHTML = tbody;
+  }
 
-  // Wire expand icons (delegation pattern matching the bilan table)
-  bodyEl.querySelectorAll('.row-expand-icon').forEach(icon => {
-    icon.addEventListener('click', function(e){
-      e.stopPropagation();
-      const tid = this.dataset.target;
-      const willOpen = !this.classList.contains('open');
-      this.classList.toggle('open', willOpen);
-      if(willOpen){
-        bodyEl.querySelectorAll(`tr[data-parent="${tid}"]`).forEach(r => r.classList.remove('row-hidden'));
-      } else {
-        cascadeHide(bodyEl, tid);
+  // Build table rows based on current view
+  const items=[];
+  if(view==='nature'){
+    // Nature view: natures → individual accounts (with bank name)
+    items.push({id:'dettes_fin_b',label:'Dettes financi\u00e8res',level:0,type:'total',expandable:true,m:dettesFinM,bold:true});
+    ['emprunt_mt','credit_bail','credit_ct'].forEach(natId=>{
+      const natM=natId==='emprunt_mt'?empruntM:natId==='credit_bail'?cbailM:cctM;
+      const line=bLine(natId);
+      const hasChildren=line&&line.accounts&&line.accounts.length>0;
+      items.push({id:natId,label:NAT_LABEL[natId],level:1,parent:'dettes_fin_b',expandable:hasChildren,m:natM});
+      if(hasChildren){
+        line.accounts.forEach((acct,ai)=>{
+          const bank=extractBank(acct.name);
+          const lbl=acct.name+(bank!=='Autre'&&bank!=='Cr\u00e9dit-bail'?' \u00b7 '+bank:'');
+          items.push({id:natId+'_a'+ai,label:lbl,level:2,parent:natId,m:acct.m||new Array(12).fill(null)});
+        });
       }
     });
+    // Trésorerie section with bank accounts
+    items.push({id:'tresorerie_a',label:'Tr\u00e9sorerie',level:0,type:'total',expandable:true,m:tresoM,bold:true});
+    ['effets_enc','banque','caisse'].forEach(subId=>{
+      const subLine=bLine(subId);
+      const subM=ser(subId);
+      const hasChildren=subLine&&subLine.accounts&&subLine.accounts.length>0;
+      const subLabel=subId==='effets_enc'?'Effets \u00e0 encaisser':subId==='banque'?'Comptes bancaires':'Caisse';
+      items.push({id:subId,label:subLabel,level:1,parent:'tresorerie_a',expandable:hasChildren,m:subM});
+      if(hasChildren){
+        subLine.accounts.forEach((acct,ai)=>{
+          items.push({id:subId+'_a'+ai,label:acct.name,level:2,parent:subId,m:acct.m||new Array(12).fill(null)});
+        });
+      }
+    });
+    items.push({id:'dette_nette',label:'Dette nette',level:0,type:'total',m:detteNetteM,bold:true});
+  } else {
+    // Banque view: banks → facilities
+    items.push({id:'dettes_fin_b',label:'Dettes financi\u00e8res',level:0,type:'total',expandable:true,m:dettesFinM,bold:true});
+    bankList.forEach(b=>{
+      items.push({id:'bank_'+b.name,label:b.name,level:1,parent:'dettes_fin_b',expandable:b.accounts.length>0,m:b.m});
+      b.accounts.forEach((acct,ai)=>{
+        const natLabel=NAT_LABEL[acct.nature]||acct.nature;
+        items.push({id:'bank_'+b.name+'_a'+ai,label:natLabel+' \u2014 '+acct.name,level:2,parent:'bank_'+b.name,m:acct.m||new Array(12).fill(null)});
+      });
+    });
+    // Trésorerie section grouped by bank
+    items.push({id:'tresorerie_a',label:'Tr\u00e9sorerie',level:0,type:'total',expandable:true,m:tresoM,bold:true});
+    const tresoByBank={};
+    ['banque','caisse'].forEach(subId=>{
+      const subLine=bLine(subId);
+      if(!subLine||!subLine.accounts)return;
+      subLine.accounts.forEach(acct=>{
+        const bank=extractBank(acct.name);
+        if(!tresoByBank[bank])tresoByBank[bank]={m:new Array(12).fill(0),accounts:[]};
+        tresoByBank[bank].accounts.push(acct);
+        for(let i=0;i<12;i++){const v=acct.m?acct.m[i]:null;if(v!=null)tresoByBank[bank].m[i]+=v}
+      });
+    });
+    Object.entries(tresoByBank).sort((a,b)=>Math.abs(b[1].m[lastIdx])-Math.abs(a[1].m[lastIdx])).forEach(([bank,d])=>{
+      items.push({id:'tbank_'+bank,label:bank,level:1,parent:'tresorerie_a',expandable:d.accounts.length>1,m:d.m});
+      if(d.accounts.length>1){
+        d.accounts.forEach((acct,ai)=>{
+          items.push({id:'tbank_'+bank+'_a'+ai,label:acct.name,level:2,parent:'tbank_'+bank,m:acct.m||new Array(12).fill(null)});
+        });
+      }
+    });
+    items.push({id:'dette_nette',label:'Dette nette',level:0,type:'total',m:detteNetteM,bold:true});
+  }
+
+  // Render table body
+  const depthMap=buildRowDepthMap(items);
+  let tbody='';
+  items.forEach(it=>{
+    const depth=depthMap.get(it.id)||0;
+    const isHidden=depth>=2;// Standard mode: L0+L1 visible, L2 hidden
+    const slice=activeRange(it.m);
+    const last=slice[slice.length-1];
+    const cls=['row-depth-'+depth];
+    if(it.bold||it.type==='total')cls.push('row-l0');
+    if(it.expandable)cls.push('row-expandable');
+    if(isHidden)cls.push('row-hidden');
+    tbody+=`<tr class="${cls.join(' ')}" data-id="${esc(it.id)}" data-parent="${esc(it.parent||'')}" data-depth="${depth}">`;
+    tbody+=`<td>`;
+    if(it.expandable)tbody+=`<span class="row-expand-icon" data-target="${esc(it.id)}">&#9654;</span>`;
+    tbody+=`${esc(it.label)}</td>`;
+    slice.forEach((v,mi)=>{
+      const display=(v==null)?'\u2013':fmt(v);
+      const cellCls=(v!=null&&v<0)?'neg':'';
+      const weight=(it.type==='total')?'700':(depth===0?'600':'400');
+      tbody+=`<td class="${cellCls}" data-col="${mi}" style="text-align:right;font-weight:${weight}">${display}</td>`;
+    });
+    const lastDisplay=(last==null)?'\u2013':fmt(last);
+    const lastWeight=(it.type==='total')?'700':'600';
+    tbody+=`<td style="text-align:right;font-weight:${lastWeight}">${lastDisplay}</td></tr>`;
+  });
+  const bodyEl=document.getElementById('dettesBody');
+  bodyEl.innerHTML=tbody;
+
+  // Wire expand icons
+  bodyEl.querySelectorAll('.row-expand-icon').forEach(icon=>{
+    icon.addEventListener('click',function(e){
+      e.stopPropagation();
+      const tid=this.dataset.target;
+      const willOpen=!this.classList.contains('open');
+      this.classList.toggle('open',willOpen);
+      if(willOpen){bodyEl.querySelectorAll(`tr[data-parent="${tid}"]`).forEach(r=>r.classList.remove('row-hidden'))}
+      else{cascadeHide(bodyEl,tid)}
+    });
   });
 
-  // Mount the Réduit/Standard/Détaillé control + persist user choice
-  const toolbar = document.getElementById('dettesToolbar');
-  if(toolbar) mountExpandControl(toolbar, 'dettesTable');
+  // Mount expand control + default to "standard" (L0+L1 visible) per Victor
+  if(!TABLE_EXPAND_MODE['dettesTable'])TABLE_EXPAND_MODE['dettesTable']='standard';
+  const toolbar=document.getElementById('dettesToolbar');
+  if(toolbar)mountExpandControl(toolbar,'dettesTable');
   refreshTableExpandMode('dettesTable');
-  if(typeof applyMonthHighlight==='function') applyMonthHighlight();
+  if(typeof applyMonthHighlight==='function')applyMonthHighlight();
 }
 
 // ─── TAB 7: CASH FLOW ───────────────────────────────────────

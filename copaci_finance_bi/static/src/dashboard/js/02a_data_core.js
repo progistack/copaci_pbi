@@ -332,26 +332,29 @@ function deriveMode(rawPL, mode, rawN1, lastMonth){
 
 // ─── PER-COMPANY CONTRIBUTION ────────────────────────────────
 // Builds per-company P&L (CA, EBITDA) from RAW_DATA, bypassing STATE.companyIds.
-// Returns null if single-company. Otherwise { companyId: {name,ca,ebitda,caM,ebitdaM} }.
-// Used by Synthèse contribution charts — only visible for multi-company users.
+// Returns null if single-company. Otherwise { companyId: {name,ca,ebitda} }.
+// Handles LTM correctly by building per-company N-1 data for the rolling tail.
 function buildCompanyContrib(year){
   const companies=STATE._companies;
   if(!companies||companies.length<=1)return null;
+  // Hide when a single company is selected — data is filtered, split would be 100/0
+  if(Array.isArray(STATE.companyIds)&&STATE.companyIds.length===1)return null;
   const bal=RAW_DATA&&RAW_DATA['balance'+year];
   if(!bal)return null;
+  const balN1=RAW_DATA&&RAW_DATA['balance'+(year-1)];
   const lastMo=CACHE.lastMonth[year];
-  const result={};
-  companies.forEach(c=>{
-    // Build acctData for this company only (inline filter, no STATE mutation)
+  // Helper: build acctData for one company from a balance array
+  function acctForCompany(balRows,cid){
     const acctData={};
     const monthFlag=new Array(12).fill(false);
-    bal.forEach(row=>{
+    if(!balRows)return null;
+    balRows.forEach(row=>{
       const accountId=row.account_id?.[0];
       const label=row.account_id?.[1]||'';
       const fullCode=resolveAccountCode(accountId,label);
       if(!fullCode)return;
       const comp=resolveAccountCompany(accountId);
-      if((comp?comp.id:1)!==c.id)return;
+      if((comp?comp.id:1)!==cid)return;
       const mi=parseMonth(row['date:month']||'');
       if(mi<0)return;
       if(!acctData[fullCode])acctData[fullCode]={months:new Array(12).fill(0),total:0,name:label,id:accountId};
@@ -360,21 +363,38 @@ function buildCompanyContrib(year){
       if((row.balance||0)!==0)monthFlag[mi]=true;
     });
     acctData.__monthFlag=monthFlag;
-    // Build PL then apply mode transform
+    return acctData;
+  }
+  const result={};
+  companies.forEach(c=>{
+    const acctData=acctForCompany(bal,c.id);
+    if(!acctData)return;
     let pl=buildPLData(acctData);
     const info=computeYearStatus(acctData,year);
-    if(info.status==='open')pl=maskEmptyMonths(pl,monthFlag);
-    const transformed=deriveMode(pl,STATE.mode,null,lastMo);
+    if(info.status==='open')pl=maskEmptyMonths(pl,acctData.__monthFlag);
+    // For LTM: build per-company N-1 PL so the rolling tail is company-specific
+    let plN1=null;
+    if(STATE.mode==='ltm'&&balN1){
+      const acctN1=acctForCompany(balN1,c.id);
+      if(acctN1)plN1=buildPLData(acctN1);
+    }
+    const transformed=deriveMode(pl,STATE.mode,plN1,lastMo);
     const caLine=transformed.find(l=>l.id==='ca_net');
     const ebitdaLine=transformed.find(l=>l.id==='ebitda');
-    const sumM=(line)=>{if(!line||!line.m)return 0;return line.m.reduce((s,v)=>s+(v||0),0)};
-    result[c.id]={
-      name:c.name,
-      ca:sumM(caLine),
-      ebitda:sumM(ebitdaLine),
-      caM:caLine?caLine.m.slice():new Array(12).fill(0),
-      ebitdaM:ebitdaLine?ebitdaLine.m.slice():new Array(12).fill(0),
+    // Aggregate: mirrors aggOn() — mensuel sums, YTD/LTM picks last cumulative
+    const agg=(line)=>{
+      if(!line||!line.m)return 0;
+      if(STATE.selectedMonth!=='all'){
+        const mi=+STATE.selectedMonth;
+        return(line.m[mi]!=null)?line.m[mi]:0;
+      }
+      if(STATE.mode==='mensuel')return line.m.reduce((s,v)=>s+(v||0),0);
+      // YTD/LTM: data is already cumulative — pick last available month
+      const li=(lastMo!=null&&lastMo>=0)?lastMo:11;
+      for(let i=li;i>=0;i--){if(line.m[i]!=null)return line.m[i]}
+      return 0;
     };
+    result[c.id]={name:c.name,ca:agg(caLine),ebitda:agg(ebitdaLine)};
   });
   return result;
 }

@@ -37,10 +37,11 @@ Chart.register({id:'biCenterText',
     const{ctx,chartArea:a}=chart;if(!a)return;
     const cx=(a.left+a.right)/2,cy=(a.top+a.bottom)/2;
     const dk=isDark();
+    const ts=cfg.textSize||18,ss=cfg.subSize||10,gap=Math.round(ts*0.55);
     ctx.save();ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.font='700 18px Inter';ctx.fillStyle=dk?'#f0f0f5':'#0f172a';
-    ctx.fillText(cfg.text||'',cx,cy-(cfg.sub?8:0));
-    if(cfg.sub){ctx.font='500 10px Inter';ctx.fillStyle=dk?'rgba(255,255,255,0.4)':'#64748b';ctx.fillText(cfg.sub,cx,cy+14)}
+    ctx.font='700 '+ts+'px Inter';ctx.fillStyle=dk?'#f0f0f5':'#0f172a';
+    ctx.fillText(cfg.text||'',cx,cy-(cfg.sub?gap/2:0));
+    if(cfg.sub){ctx.font='500 '+ss+'px Inter';ctx.fillStyle=dk?'rgba(255,255,255,0.4)':'#64748b';ctx.fillText(cfg.sub,cx,cy+gap)}
     ctx.restore()}
 });
 if(window.ChartDataLabels)Chart.register(ChartDataLabels);
