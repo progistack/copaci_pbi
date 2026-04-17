@@ -397,6 +397,11 @@ class FinanceBIController(http.Controller):
                 html = f.read()
             return Response(html, content_type='text/html; charset=utf-8',
                 headers={
+                    # HTML jamais cache cote navigateur : evite que les
+                    # anciens <script src> pointent vers des JS/CSS stale
+                    # apres un git push + upgrade module
+                    'Cache-Control': 'no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
                     'Content-Security-Policy': (
                         "default-src 'self'; "
                         "script-src 'self' 'unsafe-inline'; "

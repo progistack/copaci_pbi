@@ -1071,10 +1071,13 @@ function buildDettes(){
   const cbailM=filteredNatureSeries('credit_bail');
   const cctM=filteredNatureSeries('credit_ct');
   // Total debt = sum of 3 natures (no provisions)
+  // ser('emprunt_mt') sort du loop : evite 12 allocations + 12 bLine() lookups
+  const empruntSer=ser('emprunt_mt');
   const dettesFinM=new Array(12).fill(null);
   for(let i=0;i<12;i++){
+    if(empruntSer[i]==null)continue;
     const mt=empruntM[i]||0,cb=cbailM[i]||0,ct=cctM[i]||0;
-    if(ser('emprunt_mt')[i]!=null)dettesFinM[i]=+(mt+cb+ct).toFixed(1);
+    dettesFinM[i]=+(mt+cb+ct).toFixed(1);
   }
   const tresoM=ser('tresorerie_a');
   const detteNetteM=new Array(12).fill(null);
