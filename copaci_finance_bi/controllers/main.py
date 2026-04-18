@@ -444,7 +444,15 @@ class FinanceBIController(http.Controller):
     #  le pipeline standard. Ce route les sert manuellement.
     #
     #  Securite :
-    #  - auth='user' : session requise
+    #  - auth='public' : pas de session requise. Justifie car les fichiers
+    #    servis ici sont :
+    #      * libs open-source (Chart.js, pptxgenjs, datalabels)
+    #      * code frontend du dashboard (HTML/CSS/JS de rendu)
+    #    Aucun contient de donnee confidentielle. Les DONNEES financieres
+    #    restent protegees par auth='user' sur /data et /drill.
+    #    ATTENTION : sans auth='public', Odoo.sh renvoie 303 vers login
+    #    sur /static/src/lib/* et les libs ne se chargent pas — dashboard
+    #    casse avec "Chart is not defined".
     #  - Path traversal : double vérification (normpath + abspath)
     #  - MIME mapping explicite (pas de Content-Type deviné)
     #  - ETag + must-revalidate : invalidation immediate au deploy, 304 si
@@ -466,7 +474,7 @@ class FinanceBIController(http.Controller):
     }
 
     @http.route('/copaci_finance_bi/static/<path:filepath>',
-                type='http', auth='user')
+                type='http', auth='public')
     def serve_static(self, filepath, **kwargs):
         """Sert les fichiers statiques du module (JS, CSS, libs)."""
         safe_path = os.path.normpath(filepath)
