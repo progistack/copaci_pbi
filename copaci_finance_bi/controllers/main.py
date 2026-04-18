@@ -97,38 +97,52 @@ class FinanceBIController(http.Controller):
         }
 
         # ----------------------------------------------------------
-        #  1. GL mensuel par annee (balance{year})
+        #  1. GL mensuel sur 3 ans (balance{year})
+        #     FUSION : 1 read_group au lieu de 3 pour diviser le round-trip
+        #     reseau par 3 (Odoo.sh AWS France = ~300-500ms par requete).
+        #     Le split par annee se fait en Python sur le suffixe du label
+        #     'date:month' qu'Odoo retourne format "janvier 2024" / "January
+        #     2024" (inclus l'annee en clair).
         # ----------------------------------------------------------
         for year in years:
-            try:
-                rows = AML.read_group(
-                    domain=[
-                        ('date', '>=', f'{year}-01-01'),
-                        ('date', '<=', f'{year}-12-31'),
-                        ('parent_state', '=', 'posted'),
-                    ] + company_domain,
-                    fields=['balance:sum'],
-                    groupby=['account_id', 'date:month'],
-                    lazy=False,
-                )
-                result[f'balance{year}'] = [
-                    {
-                        'account_id': r['account_id'],
-                        'date:month': r['date:month'],
-                        'balance': r['balance'],
-                    }
-                    for r in rows
-                ]
+            result[f'balance{year}'] = []
+        try:
+            all_rows = AML.read_group(
+                domain=[
+                    ('date', '>=', f'{years[0]}-01-01'),
+                    ('date', '<=', f'{years[-1]}-12-31'),
+                    ('parent_state', '=', 'posted'),
+                ] + company_domain,
+                fields=['balance:sum'],
+                groupby=['account_id', 'date:month'],
+                lazy=False,
+            )
+            year_re = re.compile(r'(\d{4})')
+            years_set = set(years)
+            for r in all_rows:
+                month_str = r.get('date:month') or ''
+                m = year_re.search(month_str)
+                if not m:
+                    continue
+                row_year = int(m.group(1))
+                if row_year not in years_set:
+                    continue
+                result[f'balance{row_year}'].append({
+                    'account_id': r['account_id'],
+                    'date:month': r['date:month'],
+                    'balance': r['balance'],
+                })
+            for year in years:
                 _logger.info(
-                    'Finance BI [%s]: GL %d — %d lignes (companies=%s)',
+                    'Finance BI [%s]: GL %d — %d lignes (companies=%s, fused)',
                     ', '.join(c['name'] for c in company_info),
-                    year, len(rows), selected_ids,
+                    year, len(result[f'balance{year}']), selected_ids,
                 )
-            except AccessError:
-                raise
-            except Exception as e:
-                _logger.error('Finance BI: erreur GL %d — %s', year, e)
-                result[f'balance{year}'] = []
+        except AccessError:
+            raise
+        except Exception as e:
+            _logger.error('Finance BI: erreur GL (fused) — %s', e)
+            # result[f'balance{year}'] reste a [] (initialise plus haut)
 
         # ----------------------------------------------------------
         #  2. Snapshots Bilan (bsEnd{year})
