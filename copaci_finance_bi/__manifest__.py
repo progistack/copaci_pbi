@@ -1,6 +1,6 @@
 {
     'name': 'COPACI BI Finance',
-    'version': '18.0.3.0.0',
+    'version': '18.0.3.0.1',
     'category': 'Accounting/Reporting',
     'summary': 'Dashboard BI Finance COPACI — P&L, Bilan, BFR, Cash-Flow, KPIs',
     'description': """
