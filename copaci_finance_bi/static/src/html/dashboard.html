@@ -4416,7 +4416,7 @@ function renderDrillAccount(){
     tr.addEventListener('click',()=>{
       const moveId=tr.dataset.moveId;
       if(moveId){
-        window.open(ODOO_BASE+'/odoo/accounting/move/'+moveId,'_blank','noopener,noreferrer');
+        window.open(ODOO_BASE+'/odoo/action-account.action_move_journal_line/'+moveId,'_blank','noopener,noreferrer');
       }
     });
   });
@@ -4428,7 +4428,7 @@ function renderDrillAccount(){
 // Pattern Power BI : panel fixe a droite, redimensionnable, breadcrumb A <-> B
 // Donnees : PL_DATA[].accounts[] (deja calcule) + RAW_DATA.move_lines
 // ═══════════════════════════════════════════════════════════════
-const ODOO_MOVE_BASE = 'https://copaci.odoo.com/odoo/accounting/move/';
+const ODOO_MOVE_BASE = 'https://copaci.odoo.com/odoo/action-account.action_move_journal_line/';
 const PL_DRILL = {
   openLineId: null,              // ligne P&L actuellement drillee (ou null)
   openAccountCode: null,          // compte actuellement drille en Niveau B (ou null)

@@ -1,6 +1,6 @@
 {
     'name': 'COPACI BI Finance',
-    'version': '18.0.4.0.0',
+    'version': '18.0.4.0.1',
     'category': 'Accounting/Reporting',
     'summary': 'Dashboard Finance BI interactif — COPACI',
     'description': """
@@ -8,7 +8,8 @@ COPACI BI Finance — Dashboard financier interactif
 ===================================================
 
 Dashboard financier temps reel branche sur les donnees comptables Odoo via
-JSON-RPC direct (pas de controller Python).
+JSON-RPC direct. Un controller Python expose /copaci_finance_bi/data pour
+le script local refresh_data.pl (mode JSON statique hors Odoo).
 
 Fonctionnalites :
 -----------------
@@ -33,10 +34,13 @@ societe autorisee via allowed_company_ids sur chaque RPC.
 
 Deploiement :
 -------------
-Aucun controller Python, aucun modele custom. Le dashboard est un fichier
-HTML/JS statique servi depuis /copaci_finance_bi/static/ et qui appelle
-directement les modeles Odoo (account.move.line, account.account, etc.)
-via /web/dataset/call_kw.
+Aucun modele custom. Le dashboard est un fichier HTML/JS statique servi
+depuis /copaci_finance_bi/static/ et qui appelle directement les modeles
+Odoo (account.move.line, account.account, etc.) via /web/dataset/call_kw.
+
+Le controller Python /copaci_finance_bi/data n'est pas utilise par le
+dashboard en mode RPC live ; il sert uniquement au script local
+refresh_data.pl pour generer un snapshot JSON consommable hors Odoo.
 """,
     'author': 'COPACI',
     'website': 'https://copaci.odoo.com',
