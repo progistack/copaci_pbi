@@ -1,6 +1,6 @@
 {
     'name': 'COPACI BI Finance',
-    'version': '18.0.4.0.1',
+    'version': '18.0.4.0.2',
     'category': 'Accounting/Reporting',
     'summary': 'Dashboard Finance BI interactif — COPACI',
     'description': """

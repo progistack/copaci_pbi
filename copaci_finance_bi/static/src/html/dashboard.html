@@ -1762,7 +1762,8 @@ const ACCT_MAP = {
   // DG accounts have different display_names but identical SYSCOHADA codes.
   // resolveAccountCode() via _accountMap resolves DG display_names to the
   // same 8-digit codes → the prefixes below capture both companies.
-  ca_local:['70211230','70211250','70211280'],
+  ca_local:['7011','70211230','70211250','70211280'],
+  ca_local_marchandises:['7011'],   // 701100 Ventes marchandises dans la region (COPACI DG)
   ca_local_exo:['70211230'],
   ca_local_sans_asdi:['70211250'],
   ca_local_avec_asdi:['70211280'],
@@ -2496,6 +2497,7 @@ function buildPLData(acctData){
 
   // CA — ventes locales et export (sans escompte/ristournes)
   const ca_local=line('ca_local','CA local',1);
+  const ca_local_marchandises=line('ca_local_marchandises','  ◦ Ventes marchandises région',2);
   const ca_local_exo=line('ca_local_exo','  \u25E6 Ventes locales exon\u00e9r\u00e9es',2);
   const ca_local_sans_asdi=line('ca_local_sans_asdi','  \u25E6 Ventes locales sans ASDI',2);
   const ca_local_avec_asdi=line('ca_local_avec_asdi','  \u25E6 Ventes locales avec ASDI',2);
@@ -2503,10 +2505,10 @@ function buildPLData(acctData){
   const ca_export_uemoa=line('ca_export_uemoa','  \u25E6 Export UEMOA',2);
   const ca_export_hors_uemoa=line('ca_export_hors_uemoa','  \u25E6 Export hors UEMOA',2);
   ca_local.expandable=true;
-  ca_local.children=['ca_local_exo','ca_local_sans_asdi','ca_local_avec_asdi'];
+  ca_local.children=['ca_local_marchandises','ca_local_exo','ca_local_sans_asdi','ca_local_avec_asdi'];
   ca_export.expandable=true;
   ca_export.children=['ca_export_uemoa','ca_export_hors_uemoa'];
-  ca_local_exo.parent='ca_local';ca_local_sans_asdi.parent='ca_local';ca_local_avec_asdi.parent='ca_local';
+  ca_local_marchandises.parent='ca_local';ca_local_exo.parent='ca_local';ca_local_sans_asdi.parent='ca_local';ca_local_avec_asdi.parent='ca_local';
   ca_export_uemoa.parent='ca_export';ca_export_hors_uemoa.parent='ca_export';
   // CA net = local + export (structure Excel COPACI)
   const ca_net_m=ca_local.m.map((v,i)=>v+ca_export.m[i]);
@@ -2578,7 +2580,7 @@ function buildPLData(acctData){
   return [
     {id:'ca_net',label:'Chiffre d\'affaires net',level:0,type:'total',expandable:true,m:ca_net_m,children:['ca_local','ca_export']},
     {...ca_local,parent:'ca_net'},
-    {...ca_local_exo},{...ca_local_sans_asdi},{...ca_local_avec_asdi},
+    {...ca_local_marchandises},{...ca_local_exo},{...ca_local_sans_asdi},{...ca_local_avec_asdi},
     {...ca_export,parent:'ca_net'},
     {...ca_export_uemoa},{...ca_export_hors_uemoa},
     {id:'spacer1',type:'spacer'},
