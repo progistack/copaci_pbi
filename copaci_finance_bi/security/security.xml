@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Groupe d'acces dedie au Dashboard Finance BI.
+        Place sous la categorie Comptabilite / Finance afin d'apparaitre dans
+        l'ecran "Droits d'acces" des utilisateurs au bon endroit.
+
+        Les utilisateurs ajoutes a ce groupe voient le menu "COPACI BI Finance"
+        et peuvent ouvrir le dashboard. Les donnees affichees respectent leurs
+        propres droits comptables Odoo (filtrage societe + acces account.move.line).
+    -->
+    <record id="group_finance_bi_user" model="res.groups">
+        <field name="name">Finance BI / Utilisateur</field>
+        <field name="category_id" ref="base.module_category_accounting_accounting"/>
+        <field name="comment">Acces au dashboard Finance BI. Les donnees affichees respectent les droits comptables de l'utilisateur (filtrage par societe automatique via allowed_company_ids).</field>
+    </record>
+</odoo>

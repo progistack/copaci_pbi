@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!--
+        Action client : charge le composant OWL enregistre sous le tag
+        "copaci_finance_bi.dashboard". Le composant monte un iframe qui pointe
+        vers le fichier HTML statique du dashboard.
+    -->
+    <record id="action_finance_bi_dashboard" model="ir.actions.client">
+        <field name="name">COPACI BI Finance</field>
+        <field name="tag">copaci_finance_bi.dashboard</field>
+        <field name="target">current</field>
+    </record>
+
+    <!--
+        Menu racine (App). L'attribut web_icon liste "module,path" ; Odoo
+        charge /copaci_finance_bi/static/description/icon.png.
+        Le menu n'est visible que pour les membres du groupe Finance BI.
+    -->
+    <menuitem id="menu_finance_bi_root"
+              name="COPACI BI Finance"
+              action="action_finance_bi_dashboard"
+              groups="copaci_finance_bi.group_finance_bi_user"
+              web_icon="copaci_finance_bi,static/description/icon.png"
+              sequence="25"/>
+</odoo>

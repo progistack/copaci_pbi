@@ -1,27 +1,43 @@
 {
     'name': 'COPACI BI Finance',
-    'version': '18.0.3.0.1',
+    'version': '18.0.4.0.0',
     'category': 'Accounting/Reporting',
-    'summary': 'Dashboard BI Finance COPACI — P&L, Bilan, BFR, Cash-Flow, KPIs',
+    'summary': 'Dashboard Finance BI interactif — COPACI',
     'description': """
-        Module de Business Intelligence financiere COPACI.
+COPACI BI Finance — Dashboard financier interactif
+===================================================
 
-        Fonctionnalites :
-        - Compte de resultat interactif (7 niveaux de detail)
-        - Bilan patrimonial avec series mensuelles
-        - BFR et cycle de conversion de tresorerie (DSO, DIO, DPO, CCC)
-        - Flux de tresorerie (Cash-Flow Statement)
-        - KPIs et ratios de performance
-        - Suivi des dettes financieres
-        - Comparaison N-1 et Budget
-        - Modes : Mensuel / YTD / LTM
-        - Export PowerPoint natif (pptxgenjs, charts editables OOXML)
-        - Theme dark / light
-        - Drill-down par compte comptable
-        - Donnees temps reel via controller HTTP natif (account.move.line)
-        - Filtrage multi-societe avec selecteur integre
-        - Acces controle par les groupes comptables Odoo
-    """,
+Dashboard financier temps reel branche sur les donnees comptables Odoo via
+JSON-RPC direct (pas de controller Python).
+
+Fonctionnalites :
+-----------------
+- Compte de resultat (P&L) avec modes Mensuel / YTD / LTM
+- Bilan patrimonial mensualise
+- Tresorerie et BFR (DSO, DIO, DPO, CCC)
+- Flux de tresorerie (CFS)
+- KPIs et ratios de performance
+- Dettes financieres par banque et facilite
+- Drill-down P&L en side panel (comptes -> ecritures individuelles)
+- Filtre multi-societe natif (respecte les droits utilisateur)
+- Comparaison N-1 et budget
+- Export PowerPoint natif (charts OOXML editables)
+- Theme dark / light
+- Mode RPC live (donnees temps reel) ou JSON statique (snapshot)
+
+Securite :
+----------
+Acces restreint au groupe "Finance BI / Utilisateur". Les donnees affichees
+respectent les droits comptables de l'utilisateur — filtrage automatique par
+societe autorisee via allowed_company_ids sur chaque RPC.
+
+Deploiement :
+-------------
+Aucun controller Python, aucun modele custom. Le dashboard est un fichier
+HTML/JS statique servi depuis /copaci_finance_bi/static/ et qui appelle
+directement les modeles Odoo (account.move.line, account.account, etc.)
+via /web/dataset/call_kw.
+""",
     'author': 'COPACI',
     'website': 'https://copaci.odoo.com',
     'license': 'LGPL-3',
@@ -29,16 +45,17 @@
         'account',
     ],
     'data': [
+        'security/security.xml',
         'security/ir.model.access.csv',
-        'views/finance_bi_views.xml',
+        'views/actions.xml',
     ],
     'assets': {
         'web.assets_backend': [
-            'copaci_finance_bi/static/src/xml/finance_bi_templates.xml',
-            'copaci_finance_bi/static/src/js/finance_bi_action.js',
+            'copaci_finance_bi/static/src/js/dashboard_action.js',
         ],
     },
     'installable': True,
     'application': True,
     'auto_install': False,
+    'icon': '/copaci_finance_bi/static/description/icon.png',
 }
